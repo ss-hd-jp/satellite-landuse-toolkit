@@ -7,7 +7,7 @@ authors:
     given-names: Kengo
     affiliation: "Space Seed Holdings Inc."
     # orcid: "https://orcid.org/0000-0000-0000-0000"   # fill in before release
-repository-code: "https://github.com/OWNER/satellite-landuse-toolkit"
+repository-code: "https://github.com/ss-hd-jp/satellite-landuse-toolkit"
 abstract: >-
   A small Python toolkit for land-use analysis of any area on Earth using only
   free, account-free satellite products (ESA WorldCover, Hansen Global Forest

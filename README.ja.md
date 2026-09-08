@@ -22,7 +22,7 @@
 ## インストール
 
 ```bash
-git clone https://github.com/<owner>/satellite-landuse-toolkit.git
+git clone https://github.com/ss-hd-jp/satellite-landuse-toolkit.git
 cd satellite-landuse-toolkit
 pip install -r requirements.txt
 ```
