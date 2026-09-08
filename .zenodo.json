@@ -1,0 +1,23 @@
+{
+  "title": "satellite-landuse-toolkit: land-use, forest-loss and surface-water analysis from free satellite data",
+  "description": "A Python toolkit for land-use analysis of any area on Earth using only free, account-free satellite products (ESA WorldCover, Hansen Global Forest Change, JRC Global Surface Water, Sentinel-2 L2A, Esri Annual Land Cover). Runs locally without Earth Engine or API keys. Encodes the interpretation rules that keep such analyses defensible: tree-cover loss is never reported as remaining forest, two-date comparisons use a common valid-pixel mask, and threshold sensitivity is reported with every result.",
+  "license": "MIT",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Suzuki, Kengo",
+      "affiliation": "Space Seed Holdings Inc."
+    }
+  ],
+  "keywords": [
+    "remote sensing",
+    "land cover",
+    "land use change",
+    "deforestation",
+    "surface water",
+    "Sentinel-2",
+    "open data",
+    "reproducibility"
+  ],
+  "access_right": "open"
+}

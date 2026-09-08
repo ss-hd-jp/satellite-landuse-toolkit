@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+title: "satellite-landuse-toolkit: land-use, forest-loss and surface-water analysis from free satellite data"
+message: "If you use this software, please cite it and, separately, every upstream dataset you used."
+type: software
+authors:
+  - family-names: Suzuki
+    given-names: Kengo
+    affiliation: "Space Seed Holdings Inc."
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # fill in before release
+repository-code: "https://github.com/OWNER/satellite-landuse-toolkit"
+abstract: >-
+  A small Python toolkit for land-use analysis of any area on Earth using only
+  free, account-free satellite products (ESA WorldCover, Hansen Global Forest
+  Change, JRC Global Surface Water, Sentinel-2 L2A, Esri Annual Land Cover).
+  It runs locally without Earth Engine or API keys, integrates areas with the
+  exact spherical latitude-band formula, and encodes the interpretation rules
+  that keep such analyses defensible: tree-cover loss is never reported as
+  "remaining forest", two-date comparisons use a common valid-pixel mask, and
+  threshold sensitivity is reported alongside every result.
+keywords:
+  - remote sensing
+  - land cover
+  - land use change
+  - deforestation
+  - surface water
+  - Sentinel-2
+  - open data
+  - reproducibility
+license: MIT
+version: 1.0.0
+date-released: "2026-09-09"
