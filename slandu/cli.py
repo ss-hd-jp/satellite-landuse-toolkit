@@ -4,17 +4,16 @@ from __future__ import annotations
 import argparse
 import os
 
-from .geo_util import bbox_geom, load_zones
+from .geo_util import bbox_geom, load_zones, zones_bbox
 
 
 def _aoi(args):
     """Return (zones, bbox). --aoi takes a GeoJSON path; --bbox takes 4 numbers."""
-    from .fetch import aoi_bbox
     if args.bbox:
         box = tuple(args.bbox)
         return [("aoi", bbox_geom(box))], box
     zones = load_zones(args.aoi, args.name_field)
-    return zones, aoi_bbox(args.aoi)
+    return zones, zones_bbox(zones)
 
 
 def cmd_fetch(args):
@@ -30,12 +29,14 @@ def cmd_fetch(args):
         if len(pairs) > 6:
             print(f"    ... and {len(pairs) - 6} more")
         if args.download:
-            download(pairs, args.data_dir)
+            failed = download(pairs, args.data_dir)
+            if failed:
+                print(f"   {len(failed)} download(s) FAILED: {failed}")
     if args.s2_search:
-        print("== sentinel-2 candidates (least cloudy first)")
+        print("== sentinel-2 candidates (least cloudy first; point query on the AOI centre)")
         for s in s2_search(box, args.s2_search[0], args.s2_search[1], args.s2_cloud):
             print(f"   {s['date']} cloud={s['cloud']:5.1f} {s['grid']} {s['id']} "
-                  f"boa_offset={s['boa_offset_applied']}")
+                  f"baseline={s['processing_baseline']} boa_offset_applied={s['boa_offset_applied']}")
 
 
 def cmd_landcover(args):
@@ -52,7 +53,7 @@ def cmd_forest(args):
     from .forest import analyse
     zones, _ = _aoi(args)
     analyse(zones, args.data_dir, args.out_dir, threshold=args.threshold,
-            hotspot_from=args.hotspot_from)
+            last_year=args.last_year, hotspot_from=args.hotspot_from)
 
 
 def cmd_water(args):
@@ -66,9 +67,10 @@ def cmd_water(args):
 
 def cmd_change(args):
     from .change import bare_change
-    _, box = _aoi(args)
+    zones, box = _aoi(args)
     bare_change(args.s2_dir, args.tag_a, args.tag_b, box, args.out_dir,
-                stride=args.stride, label=args.label)
+                zones=None if args.bbox else zones, stride=args.stride,
+                label=args.label, offset_mode=args.offset)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def common(sp, need_out=True):
-        sp.add_argument("--aoi", help="GeoJSON of the area(s) of interest")
+        sp.add_argument("--aoi", help="GeoJSON of the area(s) of interest, EPSG:4326")
         sp.add_argument("--bbox", nargs=4, type=float,
                         metavar=("MINLON", "MINLAT", "MAXLON", "MAXLAT"))
         sp.add_argument("--name-field", default="name")
@@ -104,13 +106,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("forest", help="annual tree-cover loss by zone (Hansen GFC)")
     common(sp)
     sp.add_argument("--threshold", type=int, default=30, help="canopy %% in 2000")
-    sp.add_argument("--hotspot-from", type=int, help="e.g. 2016 for 1 km hotspots")
+    sp.add_argument("--last-year", type=int, help="truncate the period (default: data end)")
+    sp.add_argument("--hotspot-from", type=int, help="e.g. 2016 for ~1 km hotspot cells")
     sp.set_defaults(func=cmd_forest)
 
     sp = sub.add_parser("water", help="surface-water transitions (JRC GSW)")
     common(sp)
     sp.add_argument("--seed", nargs=2, type=float, metavar=("LON", "LAT"),
-                    help="seed point inside a lake to isolate it")
+                    help="seed point inside a lake to isolate its connected water area")
     sp.add_argument("--label", default="waterbody")
     sp.set_defaults(func=cmd_water)
 
@@ -118,8 +121,10 @@ def build_parser() -> argparse.ArgumentParser:
     common(sp)
     sp.add_argument("--s2-dir", default="data/s2")
     sp.add_argument("--tag-a", required=True, help="earlier scene tag")
-    sp.add_argument("--tag-b", required=True, help="later scene tag")
-    sp.add_argument("--stride", type=int, default=2)
+    sp.add_argument("--tag-b", required=True, help="later scene tag (defines the grid)")
+    sp.add_argument("--stride", type=int, default=2, help="analysis cell = stride x 10 m")
+    sp.add_argument("--offset", default="auto", choices=["auto", "applied", "apply"],
+                    help="BOA offset handling (auto = sidecar + water sanity check)")
     sp.add_argument("--label", default="aoi")
     sp.set_defaults(func=cmd_change)
     return p

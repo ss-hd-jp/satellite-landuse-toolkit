@@ -30,11 +30,13 @@
 - **最新 v1.5（1984-2024）**：`https://storage.googleapis.com/water-world/download2024/VER1-5/{PROD}/{PROD}_{LON}_{LAT}_v1_5_2024.tif`
   PROD＝`occurrence` / `change` / `seasonality` / `recurrence` / `transitions` / `extent`。
   タイル＝10°、命名は**北西角**（例 `120E_10N`）。★アンダースコアの位置がv1.4と違う。
+  **★ゼロ埋めしない**：`0E_10N`／`10E_10N`／`10W_10S`（実測2026-09：`000E_10N`・`010E_10N` は404）。Hansenの規則を流用しない。
 - 旧 v1.4（1984-2021）：`https://storage.googleapis.com/global-surface-water/downloads2021/{PROD}/{PROD}_{LON}_{LAT}v1_4_2021.tif`
 - transitionsのクラス：1恒久 2新規恒久 3消失恒久 4季節 5新規季節 6消失季節 7季節→恒久
   8恒久→季節 9一過性恒久 10一過性季節。
 - 引用：`Pekel, J-F. et al. (2016) High-resolution mapping of global surface water and its long-term changes. Nature 540: 418-422.`
-- **落とし穴**：`yearlyClassification` は公開配布パスに**存在しない**（404。年次はGEE側のみ）。
+- **落とし穴**：年次分類は上記バケットには無い。JRC自身のサーバ（`jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GSWE/YearlyClassification/`）で配布されているが、本ツールでは扱っていない。
+  v1.5はLandsat Collection 1（〜2021）と2（2022-24）の混在で、**最大1画素の位置ずれ**が公式に注記されている。
   「新規恒久水域」は養殖池・ダム・河道変化・潮汐を**全部含む**。必ず画像で目視確認してから
   「養殖池」と呼ぶこと。
 
@@ -48,13 +50,15 @@
   ★自社で解析したものに `processed by ESA` を付けない（ESAが解析したように読める）。
 - SCLクラス：3雲影 / 4植生 / 5非植生 / 6水 / 7未分類 / 8雲中 / 9雲高 / 10巻雲 / 11雪。
 - **落とし穴**：①シーン雲量が低くても局所は厚い雲（マスク必須）。②**旧ベースライン（〜2022）は
-  海面のNIRが0.06前後**あり水を裸地と誤判定する→SCL=6も除外。③2022年以降は
-  `earthsearch:boa_offset_applied` を確認（trueならDN/10000をそのまま反射率として使える）。
+  海面のNIRが0.06前後**あり水を裸地と誤判定する→SCL=6も除外。③2022年以降のオフセット：Earth Search公式は「一部のItemは適用済み」としており、
+  **メタデータが矛盾する例がある**（実測2026-09：`boa_offset_applied=true` と `raster:bands.offset=-0.1` が併存）。
+  画素で決着＝水域NIRの生DN中央値146→素の×1e-4で0.015、−0.1を重ねると−0.085（あり得ない）＝**適用済み**。
+  フラグを主、水域NIRの妥当性チェックを従にして、負の反射率が出たら止める。
 
 ## 5. Esri 10m Annual Land Cover（年次・2017-2023）
 
 - URL：`https://lulctimeseries.blob.core.windows.net/lulctimeseriesv003/lc{Y}/{ZONE}_{Y}0101-{Y+1}0101.tif`
-  （2024年以降は未公開＝404。1ファイル 100-200MB）
+  （**v003パスは2017-2023**。2024年以降は同パスでは404＝製品全体の未公開を意味しない。1ファイル 100-200MB）
 - **★★ZONE＝UTMゾーン番号 ＋ MGRS緯度帯の文字。半球の N/S ではない**（`geo_util.esri_tile()`）。
   8°刻みで C…X（I と O は欠番）。例：北緯0.5°＝`51N`／**南緯5.1°＝`50M`**／東京＝`54S`／ブエノスアイレス＝`21H`。
   ★間違えても**404にならず 200 OK で別大陸のタイルが落ちてくる**（実測2026-08：南緯5°の地点に
@@ -112,5 +116,5 @@
 
 ## 10. その他の統計
 
-- BPS（インドネシア統計庁）：**サイトが自動取得を403で拒否**する。数値は検索結果の
-  プレスリリース見出しから取り、URLを出典として明記する（本文の自動取得は不可）。
+- 統計局サイトは自動取得を403で拒否することが多い。**原文・公式PDF・正式統計表で確認できた値だけ**を使い、
+  検索結果の抜粋（期間・単位・改訂・注記が落ちる）から数値を取らない。

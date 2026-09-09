@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
 import numpy as np
 
@@ -63,6 +64,15 @@ def load_zones(path: str, name_field: str = "name") -> list[tuple[str, dict]]:
     return out
 
 
+def zones_bbox(zones) -> tuple[float, float, float, float]:
+    xs, ys = [], []
+    for _, g in zones:
+        b = bbox_of(g)
+        xs += [b[0], b[2]]
+        ys += [b[1], b[3]]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def union_geom(geoms: list[dict]) -> dict:
     """Cheap union: collect every polygon into one MultiPolygon (no dissolve).
 
@@ -83,8 +93,9 @@ def row_area_m2(lat_top: float, pixel_deg: float, n_rows: int,
                 pixel_deg_x: float | None = None) -> np.ndarray:
     """Exact spherical area [m^2] of one pixel in each raster row (EPSG:4326 only).
 
-    Uses the latitude-band formula R^2 * dlon * (sin lat1 - sin lat2); do not
-    approximate with cos(lat) * constant.
+    Latitude-band formula R^2 * dlon * (sin lat1 - sin lat2) on the authalic
+    sphere. This is the area of the *pixel cell*; it says nothing about how
+    well the pixel's class label matches the ground.
     """
     if pixel_deg_x is None:
         pixel_deg_x = pixel_deg
@@ -126,11 +137,36 @@ def iter_strips(window, rows: int = 1024):
         yield Window(window.col_off, window.row_off + off, window.width, h)
 
 
-def rasterize_zones(geoms_values, transform, shape, all_touched: bool = False) -> np.ndarray:
-    """Burn [(geometry, value), ...] into a uint8 array (0 = outside)."""
+def rasterize_zones(geoms_values, transform, shape, all_touched: bool = False,
+                    dtype: str = "uint16") -> np.ndarray:
+    """Burn [(geometry, value), ...] into an integer array (0 = outside).
+
+    Later geometries overwrite earlier ones where they overlap. If your zones
+    overlap, rasterize them one at a time instead.
+    """
     from rasterio.features import rasterize
+    maxv = max((v for _, v in geoms_values), default=0)
+    if dtype == "uint8" and maxv > 255:
+        raise ValueError("more than 255 zones: use dtype='uint16' or 'uint32'")
+    if dtype == "uint16" and maxv > 65535:
+        raise ValueError("more than 65535 zones: use dtype='uint32'")
     return rasterize(geoms_values, out_shape=shape, transform=transform,
-                     fill=0, dtype="uint8", all_touched=all_touched)
+                     fill=0, dtype=dtype, all_touched=all_touched)
+
+
+def expected_zone_area_ha(zones, bbox, pixel_deg: float = 1 / 4000) -> np.ndarray:
+    """Area of each zone by rasterizing it on a synthetic lat/lon grid.
+
+    Used to report what share of the AOI the available tiles actually covered.
+    """
+    from rasterio.transform import from_origin
+    minx, miny, maxx, maxy = bbox
+    w = max(1, int(math.ceil((maxx - minx) / pixel_deg)))
+    h = max(1, int(math.ceil((maxy - miny) / pixel_deg)))
+    tr = from_origin(minx, maxy, pixel_deg, pixel_deg)
+    ids = rasterize_zones([(g, i + 1) for i, (_, g) in enumerate(zones)], tr, (h, w))
+    ha = row_area_m2(maxy, pixel_deg, h, pixel_deg) / 10_000.0
+    return np.array([sum_area_ha(ids == i + 1, ha) for i in range(len(zones))])
 
 
 # ---------------------------------------------------------------- tile naming
@@ -166,17 +202,26 @@ def tiles_10deg_nw(bbox) -> list[tuple[int, int]]:
 
 
 def hansen_tile_name(lat_top: int, lon_left: int) -> str:
-    """Hansen GFC tile name, e.g. 10N_120E."""
+    """Hansen GFC tile name, zero-padded: 10N_120E, 00N_000E, 10S_010W."""
     ns = "N" if lat_top >= 0 else "S"
     ew = "E" if lon_left >= 0 else "W"
     return f"{abs(lat_top):02d}{ns}_{abs(lon_left):03d}{ew}"
 
 
 def jrc_tile_name(lat_top: int, lon_left: int) -> str:
-    """JRC Global Surface Water tile name, e.g. 120E_10N (longitude first)."""
+    """JRC Global Surface Water tile name. NOT zero-padded: 120E_10N, 0E_10N, 10W_10S.
+
+    Verified against the v1.5 bucket (2026-09): `000E_10N` and `010E_10N` return
+    404, `0E_10N` and `10E_10N` return 200. Do not reuse the Hansen convention.
+    """
     ns = "N" if lat_top >= 0 else "S"
     ew = "E" if lon_left >= 0 else "W"
-    return f"{abs(lon_left):03d}{ew}_{abs(lat_top):02d}{ns}"
+    return f"{abs(lon_left)}{ew}_{abs(lat_top)}{ns}"
+
+
+HANSEN_TILE_RE = re.compile(r"_(\d{2}[NS]_\d{3}[EW])\.tif$")
+JRC_TILE_RE = re.compile(r"_(\d{1,3}[EW]_\d{1,2}[NS])_v")
+HANSEN_VERSION_RE = re.compile(r"(GFC-(\d{4})-v[\d.]+)")
 
 
 # MGRS latitude bands: 8 degrees each, letters C..X, omitting I and O (X spans 12).
@@ -199,3 +244,20 @@ def esri_tile(lon: float, lat: float) -> str:
     """
     z = int((lon + 180) // 6) + 1
     return f"{z}{mgrs_band(lat)}"
+
+
+def esri_tiles(bbox) -> list[str]:
+    """Every Esri tile (zone x band) the bbox touches, not just its corners."""
+    minx, miny, maxx, maxy = bbox
+    zones = range(int((minx + 180) // 6) + 1, int((maxx + 180) // 6) + 2)
+    bands = []
+    lat = miny
+    while lat <= maxy:
+        b = mgrs_band(lat)
+        if b not in bands:
+            bands.append(b)
+        lat += 8
+    bmax = mgrs_band(maxy)
+    if bmax not in bands:
+        bands.append(bmax)
+    return [f"{z}{b}" for z in zones for b in bands]

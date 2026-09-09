@@ -4,75 +4,129 @@ Terminology matters here. Hansen `loss` is a stand-replacement disturbance of
 vegetation taller than 5 m; it is NOT netted against regrowth. This module
 therefore never reports "remaining forest" - it reports
 "area with tree cover > threshold in 2000 where no loss has been detected".
+
+The provider also warns that "definitive area estimation should not be made
+using pixel counts from the forest loss layers" and that sensor and algorithm
+changes make intervals not strictly comparable. What comes out of here is a
+map-pixel tally, not a statistical area estimate.
 """
 from __future__ import annotations
 
 import csv
 import glob
 import os
+import re
 
 import numpy as np
 import rasterio
 
-from .geo_util import (bbox_of, rasterize_zones, row_area_m2, sum_area_ha,
-                       union_geom, window_for_bbox)
+from .geo_util import (HANSEN_TILE_RE, HANSEN_VERSION_RE, expected_zone_area_ha,
+                       rasterize_zones, row_area_m2, sum_area_ha, window_for_bbox,
+                       zones_bbox)
 
 FIRST_YEAR = 2001  # lossyear == 1
 
 
-def _find(data_dir: str, layer: str) -> str:
-    hits = sorted(glob.glob(os.path.join(data_dir, f"Hansen_*_{layer}_*.tif")))
-    if not hits:
-        raise SystemExit(f"missing Hansen {layer} raster in {data_dir} "
-                         f"(run `slandu fetch --download`)")
-    return hits[0]
+def _tiles(data_dir: str) -> tuple[str, int, dict[str, dict[str, str]]]:
+    """Group Hansen layers by tile id. Returns (version, end year, {tile: {layer: path}})."""
+    paths = glob.glob(os.path.join(data_dir, "Hansen_*_*.tif"))
+    if not paths:
+        raise SystemExit(f"no Hansen rasters in {data_dir} (run `slandu fetch --download`)")
+    versions, tiles = set(), {}
+    for p in paths:
+        base = os.path.basename(p)
+        mv, mt = HANSEN_VERSION_RE.search(base), HANSEN_TILE_RE.search(base)
+        if not (mv and mt):
+            continue
+        versions.add(mv.group(1))
+        layer = re.sub(r"^Hansen_" + re.escape(mv.group(1)) + "_", "", base)
+        layer = layer[: layer.index("_" + mt.group(1))]
+        tiles.setdefault(mt.group(1), {})[layer] = p
+    if len(versions) != 1:
+        raise SystemExit(f"mixed Hansen versions in {data_dir}: {sorted(versions)} - keep one")
+    version = versions.pop()
+    end_year = int(HANSEN_VERSION_RE.search(version).group(2))
+    for t, layers in tiles.items():
+        missing = {"treecover2000", "lossyear", "datamask"} - set(layers)
+        if missing:
+            raise SystemExit(f"tile {t} is missing layers {sorted(missing)}")
+    return version, end_year, tiles
 
 
 def analyse(zones, data_dir: str, out_dir: str, threshold: int = 30,
             last_year: int | None = None, hotspot_from: int | None = None) -> dict:
-    """Annual loss per zone + summary CSV. `zones` is [(name, geometry), ...]."""
-    p_loss = _find(data_dir, "lossyear")
-    p_tc = _find(data_dir, "treecover2000")
-    p_dm = _find(data_dir, "datamask")
+    """Annual loss per zone + summary CSV. `zones` is [(name, geometry), ...].
 
-    all_geom = union_geom([g for _, g in zones])
-    with rasterio.open(p_loss) as dl, rasterio.open(p_tc) as dt, rasterio.open(p_dm) as dd:
-        win = window_for_bbox(dl, bbox_of(all_geom))
-        if win is None:
-            raise SystemExit("AOI does not overlap the Hansen tile")
-        tr = dl.window_transform(win)
-        loss = dl.read(1, window=win)
-        tc = dt.read(1, window=win)
-        dm = dd.read(1, window=win)
-
-    if last_year is None:
-        last_year = FIRST_YEAR + int(loss.max()) - 1
-    n_years = last_year - FIRST_YEAR + 1
+    Every tile that intersects the AOI is read and summed. Coverage of the AOI
+    by the available tiles is reported; anything below ~99 % means tiles are
+    missing and totals are partial.
+    """
+    version, data_end, tiles = _tiles(data_dir)
+    last_year = last_year or data_end
+    if last_year > data_end:
+        raise SystemExit(f"{version} ends in {data_end}; cannot report to {last_year}")
     years = list(range(FIRST_YEAR, last_year + 1))
-
-    ha = row_area_m2(tr.f, -tr.e, loss.shape[0], tr.a) / 10_000.0
-    zone_ids = rasterize_zones([(g, i + 1) for i, (_, g) in enumerate(zones)],
-                               tr, loss.shape)
-    canopy = (dm == 1) & (tc > threshold)
+    n_years = len(years)
+    last_idx = last_year - FIRST_YEAR + 1          # lossyear value of the final year
 
     names = [n for n, _ in zones]
+    bbox = zones_bbox(zones)
     annual = np.zeros((len(zones), n_years))
     base = np.zeros(len(zones))
-    for r in range(loss.shape[0]):
-        rowsel = canopy[r]
-        if not rowsel.any():
-            continue
-        z = zone_ids[r][rowsel]
-        ly = loss[r][rowsel]
-        for i in range(len(zones)):
-            m = z == i + 1
-            if not m.any():
+    covered = np.zeros(len(zones))
+    sens = {thr: [0.0, 0.0] for thr in sorted({10, threshold, 50})}
+    hotspot_rows: list[list] = []
+    used_tiles = []
+
+    for tile, layers in sorted(tiles.items()):
+        with rasterio.open(layers["lossyear"]) as dl:
+            win = window_for_bbox(dl, bbox)
+            if win is None:
                 continue
-            base[i] += m.sum() * ha[r]
-            lz = ly[m]
-            hit = lz > 0
-            if hit.any():
-                annual[i] += np.bincount(lz[hit] - 1, minlength=n_years)[:n_years] * ha[r]
+            tr = dl.window_transform(win)
+            loss = dl.read(1, window=win)
+        with rasterio.open(layers["treecover2000"]) as dt:
+            tc = dt.read(1, window=win)
+        with rasterio.open(layers["datamask"]) as dd:
+            dm = dd.read(1, window=win)
+        used_tiles.append(tile)
+
+        ha = row_area_m2(tr.f, -tr.e, loss.shape[0], tr.a) / 10_000.0
+        zone_ids = rasterize_zones([(g, i + 1) for i, (_, g) in enumerate(zones)],
+                                   tr, loss.shape)
+        in_period = (loss >= 1) & (loss <= last_idx)
+        canopy = (dm == 1) & (tc > threshold)
+
+        for r in range(loss.shape[0]):
+            zr = zone_ids[r]
+            if not zr.any():
+                continue
+            for i in range(len(zones)):
+                m = zr == i + 1
+                if not m.any():
+                    continue
+                covered[i] += m.sum() * ha[r]
+                cm = m & canopy[r]
+                base[i] += cm.sum() * ha[r]
+                lz = loss[r][cm & in_period[r]]
+                if lz.size:
+                    annual[i] += np.bincount(lz - 1, minlength=n_years)[:n_years] * ha[r]
+
+        aoi = zone_ids > 0
+        for thr in sens:
+            cm = aoi & (dm == 1) & (tc > thr)
+            sens[thr][0] += sum_area_ha(cm, ha)
+            sens[thr][1] += sum_area_ha(cm & in_period, ha)
+
+        if hotspot_from is not None:
+            hotspot_rows += _hotspots(loss, canopy & aoi, zone_ids, names, tr, ha,
+                                      hotspot_from, last_idx)
+
+    if not used_tiles:
+        raise SystemExit("no Hansen tile intersects the AOI")
+
+    expected = expected_zone_area_ha(zones, bbox)
+    coverage = np.where(expected > 0, 100 * covered / np.maximum(expected, 1e-9), 0.0)
 
     os.makedirs(out_dir, exist_ok=True)
     p = os.path.join(out_dir, "forest_loss_annual.csv")
@@ -86,58 +140,69 @@ def analyse(zones, data_dir: str, out_dir: str, threshold: int = 30,
     p = os.path.join(out_dir, "forest_loss_summary.csv")
     with open(p, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["zone", f"canopy_gt{threshold}pct_2000_ha",
+        w.writerow(["zone", "tiles_coverage_pct", f"canopy_gt{threshold}pct_2000_ha",
                     f"loss_{FIRST_YEAR}_{last_year}_ha", "loss_pct_of_2000",
                     "no_loss_detected_ha", "annual_mean_first10_ha",
-                    "annual_mean_last10_ha"])
+                    "annual_mean_last10_ha", "data_version"])
         for i, name in enumerate(names):
             tot = annual[i].sum()
-            w.writerow([name, f"{base[i]:.1f}", f"{tot:.1f}",
+            w.writerow([name, f"{coverage[i]:.1f}", f"{base[i]:.1f}", f"{tot:.1f}",
                         f"{100 * tot / base[i]:.2f}" if base[i] else "",
                         f"{base[i] - tot:.1f}",
-                        f"{annual[i][:10].mean():.1f}", f"{annual[i][-10:].mean():.1f}"])
+                        f"{annual[i][:10].mean():.1f}" if n_years >= 10 else "",
+                        f"{annual[i][-10:].mean():.1f}" if n_years >= 10 else "",
+                        version])
+            if coverage[i] < 99:
+                print(f"  WARNING: {name}: tiles cover only {coverage[i]:.1f}% of the zone")
     print("wrote", p, "(note: 'no_loss_detected' is NOT remaining forest)")
 
-    # sensitivity to the canopy threshold - report it, do not hide it
     p = os.path.join(out_dir, "forest_loss_threshold_sensitivity.csv")
-    aoi_mask = zone_ids > 0
     with open(p, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
-        w.writerow(["threshold_pct", "canopy_2000_ha", "loss_ha", "loss_pct"])
-        for thr in (10, threshold, 50):
-            cm = aoi_mask & (dm == 1) & (tc > thr)
-            b = sum_area_ha(cm, ha)
-            l = sum_area_ha(cm & (loss > 0), ha)
-            w.writerow([thr, f"{b:.1f}", f"{l:.1f}",
-                        f"{100 * l / b:.2f}" if b else ""])
+        w.writerow(["threshold_pct", "canopy_2000_ha", f"loss_{FIRST_YEAR}_{last_year}_ha",
+                    "loss_pct"])
+        for thr, (b, l) in sens.items():
+            w.writerow([thr, f"{b:.1f}", f"{l:.1f}", f"{100 * l / b:.2f}" if b else ""])
     print("wrote", p)
 
     if hotspot_from is not None:
-        _hotspots(loss, canopy, zone_ids, names, tr, ha, out_dir, hotspot_from)
+        hotspot_rows.sort(key=lambda r: -r[3])
+        p = os.path.join(out_dir, f"forest_loss_hotspots_from{hotspot_from}.csv")
+        with open(p, "w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            w.writerow(["rank", "lat", "lon", "loss_ha", "cell_area_ha",
+                        "loss_pct_of_cell", "zone_at_centre"])
+            for rank, row in enumerate(hotspot_rows[:40], 1):
+                w.writerow([rank] + row)
+        print("wrote", p, "(cells are ~1 km squares of pixels on the lat/lon grid; "
+                          "area is given per cell, not assumed to be 1 km^2)")
 
-    return {"years": years, "annual": annual, "canopy_2000": base, "names": names}
+    return {"years": years, "annual": annual, "canopy_2000": base, "names": names,
+            "coverage_pct": coverage, "version": version, "tiles": used_tiles}
 
 
-def _hotspots(loss, canopy, zone_ids, names, tr, ha, out_dir, from_year, top=40):
-    """1 km cells with the most loss since `from_year`."""
+def _hotspots(loss, canopy_in_aoi, zone_ids, names, tr, ha, from_year, last_idx):
+    """Loss since `from_year` aggregated into blocks of k x k pixels (~1 km at the
+    equator). Returns rows [lat, lon, loss_ha, cell_area_ha, loss_pct, zone]."""
     idx = from_year - FIRST_YEAR + 1
-    recent = (canopy & (loss >= idx)).astype(np.float32)
+    hit = canopy_in_aoi & (loss >= idx) & (loss <= last_idx)
     k = max(1, int(round(1000 / (tr.a * 111_320))))
-    hh, ww = (recent.shape[0] // k) * k, (recent.shape[1] // k) * k
-    if hh == 0 or ww == 0:
-        return
-    cells = recent[:hh, :ww].reshape(hh // k, k, ww // k, k).sum(axis=(1, 3))
-    cell_ha = cells * float(ha.mean())
-    order = np.argsort(cell_ha, axis=None)[::-1][:top]
-    p = os.path.join(out_dir, f"forest_loss_hotspots_1km_from{from_year}.csv")
-    with open(p, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        w.writerow(["rank", "lat", "lon", "loss_ha_per_km2", "zone"])
-        for rank, flat in enumerate(order, 1):
-            cy, cx = np.unravel_index(flat, cell_ha.shape)
-            py, px = cy * k + k // 2, cx * k + k // 2
-            lon, lat = tr * (px + 0.5, py + 0.5)
-            zid = int(zone_ids[py, px])
-            w.writerow([rank, f"{lat:.4f}", f"{lon:.4f}", f"{cell_ha[cy, cx]:.1f}",
-                        names[zid - 1] if zid else ""])
-    print("wrote", p)
+    rows = []
+    h, w = hit.shape
+    for r0 in range(0, h, k):
+        r1 = min(r0 + k, h)
+        row_ha = ha[r0:r1]
+        for c0 in range(0, w, k):
+            c1 = min(c0 + k, w)
+            block = hit[r0:r1, c0:c1]
+            if not block.any():
+                continue
+            loss_ha = float((block.sum(axis=1) * row_ha).sum())
+            cell_ha = float(row_ha.sum() * (c1 - c0))
+            rc, cc = (r0 + r1) // 2, (c0 + c1) // 2
+            lon, lat = tr * (cc + 0.5, rc + 0.5)
+            zid = int(zone_ids[rc, cc])
+            rows.append([f"{lat:.4f}", f"{lon:.4f}", round(loss_ha, 1),
+                         round(cell_ha, 1), round(100 * loss_ha / cell_ha, 1),
+                         names[zid - 1] if zid else ""])
+    return rows

@@ -54,9 +54,16 @@ through it before anything leaves your organisation.
   put the difference in a footnote. Do not ship a table that silently disagrees
   with itself.
 
-- [ ] **10. Show a sensitivity test.** Recompute with at least one alternative
-  threshold (canopy 10/30/50 %, NDVI cut-off, occurrence cut-off) and show the
-  conclusion does not depend on it.
+- [ ] **10. Evaluate threshold dependence — and report it either way.** Recompute
+  with at least one alternative threshold (canopy 10/30/50 %, NDVI cut-off,
+  occurrence cut-off). If the conclusion changes, say by how much; do not fix
+  the desired conclusion first and look for a threshold that gives it.
+
+- [ ] **11. Map area is not a statistical area estimate.** A pixel tally on a
+  classified map carries the map's classification error. Hansen's own usage
+  notes say definitive area estimates should not be made from loss-pixel counts.
+  For a defensible area figure, sample with reference data and give a
+  confidence interval; otherwise call it "mapped area".
 
 ## D. Attribution
 
@@ -66,6 +73,8 @@ through it before anything leaves your organisation.
       without `processed by ESA` on your own analysis
 - [ ] Dataset **versions and periods** stated in the body text, and confirmed to be
       the newest at the time of writing
+- [ ] A run manifest kept with the outputs: input files, versions, scene IDs, AOI,
+      period, thresholds, grid/stride, valid share, software environment
 
 ## E. Sensitivity and scope
 

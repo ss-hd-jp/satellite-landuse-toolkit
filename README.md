@@ -1,25 +1,35 @@
 # satellite-landuse-toolkit
 
-Land-use, forest-loss and surface-water analysis for **any area on Earth**, using
-**only free, no-account satellite data**. No Earth Engine, no API keys, no cloud
-compute — everything runs locally from downloaded tiles.
+Local, reproducible tallies of land cover, tree-cover loss and surface-water
+change from **free, account-free satellite products** — ESA WorldCover, Hansen
+Global Forest Change, JRC Global Surface Water and Sentinel-2 L2A. No Earth
+Engine, no API keys; everything runs from downloaded tiles.
 
-The toolkit exists because the same handful of mistakes turn a plausible-looking
-land-use report into a wrong one. Those mistakes are handled in code and spelled
-out in [docs/pitfalls.md](docs/pitfalls.md).
+**What the outputs are:** areas of *map pixels* by class, on the analysis grid.
+They are not statistical area estimates, not land *use*, not tenure, and not
+evidence of cause or legality. The toolkit's job is to make those tallies
+correct and to keep you from over-reading them; the interpretation rules that
+reviewers enforce are in [docs/pitfalls.md](docs/pitfalls.md).
+
+**Status:** pre-release (v1.0.0 candidate). An external review found several
+defects in an earlier draft (multi-tile handling, period end, tile naming,
+Sentinel-2 co-registration and offset handling, AOI masking); those are fixed
+and covered by `tests/`. Coverage of the datasets is global-ish but not
+universal — see *Limitations*.
 
 ## What it does
 
-| Command | Data source | Output |
+| Command | Source | Output |
 |---|---|---|
-| `slandu fetch` | resolves the tiles your AOI needs, downloads them | local GeoTIFFs |
-| `slandu landcover` | ESA WorldCover 10 m | area per land-cover class, per zone |
-| `slandu forest` | Hansen Global Forest Change 30 m | annual tree-cover loss per zone, 1 km hotspots, threshold sensitivity |
-| `slandu water` | JRC Global Surface Water 30 m | water-transition classes per zone; one lake isolated by seed point |
-| `slandu change` | Sentinel-2 L2A 10 m | two-date bare-ground change on a **common valid mask**, clustered |
+| `slandu fetch` | — | resolves the tiles your AOI touches, downloads them (`curl`), Sentinel-2 scene search |
+| `slandu landcover` | ESA WorldCover 10 m (2021) | area per class, per zone |
+| `slandu forest` | Hansen GFC 30 m (2001–2025) | annual tree-cover loss per zone, tile coverage, threshold sensitivity, ~1 km hotspot cells |
+| `slandu water` | JRC GSW v1.5 30 m (1984–2024) | transition classes per zone; connected water area around a seed point |
+| `slandu change` | Sentinel-2 L2A | two-date bare-ground change per zone on one reference grid with a **common valid mask**; run manifest |
 
-Areas are integrated with the exact spherical latitude-band formula, not a
-`cos(lat)` approximation.
+All tiles intersecting the AOI are summed; each result reports what share of
+the AOI the available tiles covered. Lat/lon pixel areas use the exact
+spherical latitude-band formula (that is cell area, not classification accuracy).
 
 ## Install
 
@@ -27,9 +37,11 @@ Areas are integrated with the exact spherical latitude-band formula, not a
 git clone https://github.com/ss-hd-jp/satellite-landuse-toolkit.git
 cd satellite-landuse-toolkit
 pip install -r requirements.txt
+python -m pytest tests -q
 ```
 
-Python 3.10+, `rasterio`, `numpy`, `scipy`, `Pillow`. No geopandas, no shapely.
+Python 3.10+, `rasterio`, `numpy`, `scipy`, `Pillow`, and the external
+command **`curl`** on your PATH. No geopandas, no shapely.
 
 ## Quickstart
 
@@ -38,72 +50,77 @@ python -m slandu fetch --bbox 138.55 36.95 138.75 37.10 --data-dir data/rasters 
 python -m slandu forest --bbox 138.55 36.95 138.75 37.10 --data-dir data/rasters --out-dir out --hotspot-from 2016
 ```
 
-Use `--aoi your_area.geojson` instead of `--bbox` to get per-zone tables
-(one row group per feature; the zone name comes from `--name-field`, default `name`).
-See [examples/quickstart.md](examples/quickstart.md) for the full walk-through
-including Sentinel-2 change detection.
+`--aoi your_area.geojson` (EPSG:4326) instead of `--bbox` gives one row group
+per feature, for every command including `change`. Full walk-through:
+[examples/quickstart.md](examples/quickstart.md).
 
-## Reading the output honestly
+## Reading the output
 
-Three points that reviewers always raise, handled up front:
+Three points reviewers always raise:
 
-**1. Hansen loss is not netted against regrowth.** The summary column is called
-`no_loss_detected_ha`, never "remaining forest". A pixel that lost its canopy in
-2005 and is fully wooded again today still counts as loss. Report it as
-*"area with >30 % canopy in 2000 where loss has been detected"*.
+**1. Hansen loss is not netted against regrowth.** The summary column is
+`no_loss_detected_ha`, never "remaining forest": a pixel that lost its canopy
+in 2005 and is fully wooded today still counts as loss. Say
+*"area with >30 % canopy in 2000 where no loss has been detected"*. The
+provider also states that definitive area estimates should not be made from
+loss-pixel counts and that intervals are not strictly comparable across sensor
+and algorithm changes — treat `annual_mean_first10` vs `last10` as descriptive.
 
-**2. Land cover is not land use, and it is not tenure.** ESA WorldCover's global
-overall accuracy is 76.7 %, and its `cropland` class is badly under-detected in
-landscapes with rotational or smallholder agriculture. Always print national
-crop statistics next to it — and remember that a harvested-area statistic is a
-*flow* (a field cropped twice counts twice) while land cover is a *stock*.
+**2. Land cover ≠ land use ≠ tenure.** WorldCover 2021's global overall accuracy
+is 76.7 %; that is not a per-class or per-region figure, and cropland
+under-detection *can* occur in rotational or smallholder landscapes. Print
+national crop statistics next to the map figure, and remember a harvested-area
+statistic is a *flow* (a field cropped twice counts twice) while land cover is
+a *stock*.
 
-**3. Cloud masking decides your answer.** `slandu change` keeps SCL classes
-4/5/7 only, drops water (class 6), and compares **only pixels valid on both
-dates**, reporting `common_valid_pct` so a reader can check. Without this, a
-cloudier baseline date silently manufactures "change".
+**3. Two-date change depends on registration, scaling and masking.**
+`slandu change` reprojects both scenes onto one reference grid, decides the
+reflectance scaling per scene from its STAC sidecar and then checks it against
+water pixels (refusing to run on a double-applied offset), keeps SCL classes
+4/5/7 only, and compares only pixels valid on both dates (`common_valid_pct`).
+It cannot remove residual haze, shadow, BRDF or seasonal effects — one date
+pair is a candidate, not a finding.
 
 ## Data sources
 
-All free and account-free. Versions, URL patterns, licences, required citation
-strings and the traps in each dataset are in
-[docs/data_catalog.md](docs/data_catalog.md).
+Versions, URL patterns, licences, required citation and attribution strings,
+and the traps in each dataset: [docs/data_catalog.md](docs/data_catalog.md).
 
-- ESA WorldCover 10 m (CC BY 4.0)
-- Hansen Global Forest Change (UMD/Google/USGS/NASA)
-- JRC Global Surface Water v1.5, 1984–2024 (EC JRC / Google)
-- Sentinel-2 L2A COGs via AWS Open Data + the Earth Search STAC API
-- Esri 10 m Annual Land Cover 2017–2023 (URL resolution only)
+- ESA WorldCover 10 m 2021 v200 — CC BY 4.0
+- Hansen Global Forest Change 2025 v1.13 — CC BY 4.0, credit `Source: Hansen/UMD/Google/USGS/NASA`
+- JRC Global Surface Water v1.5 (1984–2024) — Copernicus terms, credit `Source: EC JRC/Google`
+- Sentinel-2 L2A COGs on AWS via the Earth Search STAC API — `Contains modified Copernicus Sentinel data [year].`
+- Esri 10 m Annual Land Cover (v003 path, 2017–2023) — URL resolution only
 
-**You are responsible for the attribution of whatever you publish.** This
-toolkit downloads other people's data; the required citation string for each
-source is listed in the data catalog. In particular, do not add
-`processed by ESA` to your own analysis of Sentinel-2 —
-`Contains modified Copernicus Sentinel data [year].` is the correct form.
+**Attribution of what you publish is your responsibility.** Do not append
+`processed by ESA` to your own Sentinel-2 analysis.
 
-Administrative boundaries are *not* bundled. If you use
-[geoBoundaries](https://www.geoboundaries.org/), note that **the source and
-licence differ per level** (ADM1 and ADM2 of the same country can come from
-different providers), which also means the national total may not equal the sum
-of its subdivisions. Check the API metadata and state the difference in a footnote.
+Administrative boundaries are not bundled. If you use geoBoundaries, the
+source and licence can differ per level (ADM1 vs ADM2 of the same country), and
+when they do the national total will not equal the sum of subdivisions —
+check the API metadata and footnote the difference.
 
 ## Limitations
 
-- Lat/lon rasters only for the zonal statistics (Sentinel-2 handling is UTM-aware).
-- No reprojection of your AOI: give it in EPSG:4326.
-- The union used for masking is a plain collection of polygons, not a topological
-  dissolve — fine for rasterization, not for geometry work.
-- Tiles are downloaded whole. A large AOI means large downloads (a Sentinel-2
-  band is ~150 MB, a Hansen `treecover2000` tile ~140 MB).
-- GDAL's `/vsicurl` is deliberately not used; some environments block or throttle
-  it badly enough to hang.
+- Zonal statistics need lat/lon (geographic) rasters; `change` works in the
+  scene's UTM CRS and reprojects inputs onto the later scene's grid.
+- AOI must be EPSG:4326. Overlapping zones overwrite each other in the zone
+  raster (later wins).
+- Hansen covers 80°N–60°S; JRC and WorldCover have their own extents. AOIs
+  crossing the antimeridian are not handled.
+- `change` samples the 10 m bands onto a `stride`×10 m grid (default 20 m) by
+  nearest neighbour; it does not aggregate every 10 m pixel. Scene footprints
+  are not checked — verify both scenes cover the AOI.
+- Hotspot cells are blocks of pixels on the lat/lon grid (~1 km at the
+  equator); the CSV gives the true cell area rather than assuming 1 km².
+- Tiles are downloaded whole (Sentinel-2 band ≈150 MB, Hansen `treecover2000`
+  ≈140 MB). `/vsicurl` is deliberately unused.
 
 ## Citing
 
-If this toolkit contributed to your work, please cite the archived release
-(DOI is minted per version by Zenodo — see [CITATION.cff](CITATION.cff)) and,
-separately, every upstream dataset you actually used.
+Cite the archived release (Zenodo DOI, see [CITATION.cff](CITATION.cff)) and,
+separately, every upstream dataset you used.
 
 ## Licence
 
-Code: [MIT](LICENSE). The datasets it downloads keep their own licences.
+Code: [MIT](LICENSE). Downloaded datasets keep their own licences.

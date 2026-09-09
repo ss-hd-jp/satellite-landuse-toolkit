@@ -1,6 +1,6 @@
 {
   "title": "satellite-landuse-toolkit: land-use, forest-loss and surface-water analysis from free satellite data",
-  "description": "A Python toolkit for land-use analysis of any area on Earth using only free, account-free satellite products (ESA WorldCover, Hansen Global Forest Change, JRC Global Surface Water, Sentinel-2 L2A, Esri Annual Land Cover). Runs locally without Earth Engine or API keys. Encodes the interpretation rules that keep such analyses defensible: tree-cover loss is never reported as remaining forest, two-date comparisons use a common valid-pixel mask, and threshold sensitivity is reported with every result.",
+  "description": "A Python toolkit that tallies land cover, tree-cover loss and surface-water change for an area of interest from free, account-free satellite products (ESA WorldCover, Hansen Global Forest Change, JRC Global Surface Water, Sentinel-2 L2A). It runs locally without Earth Engine or API keys, sums every tile that intersects the area and reports tile coverage, integrates lat/lon pixel areas with the spherical latitude-band formula, and applies the interpretation rules reviewers enforce: tree-cover loss is never reported as remaining forest, two-date Sentinel-2 comparisons are made on one reference grid with a common valid-pixel mask and a checked reflectance scaling, and canopy threshold sensitivity is reported for forest results. Outputs are map-pixel tallies, not statistical area estimates.",
   "license": "MIT",
   "upload_type": "software",
   "creators": [

@@ -38,12 +38,29 @@ def find_rasters(data_dir: str, pattern: str) -> list[str]:
     return sorted(glob.glob(os.path.join(data_dir, pattern)))
 
 
+def dedupe_tiles(paths: list[str]) -> list[str]:
+    """Drop rasters whose bounds duplicate an earlier one (e.g. two versions of
+    the same tile matched by a loose glob) - otherwise areas are double counted."""
+    seen, out = set(), []
+    for p in paths:
+        with rasterio.open(p) as ds:
+            key = (tuple(round(v, 6) for v in ds.bounds), ds.crs.to_string())
+        if key in seen:
+            print(f"  WARNING: {os.path.basename(p)} duplicates an earlier tile's extent - skipped")
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
 def class_areas(geom: dict, raster_paths: list[str], strip_rows: int = 1024,
                 exclude: tuple[int, ...] = (0, 255)) -> dict[int, float]:
     """Area [ha] per class value inside `geom`, summed over (possibly several) tiles."""
     acc: dict[int, float] = {}
     for path in raster_paths:
         with rasterio.open(path) as ds:
+            if ds.crs is None or not ds.crs.is_geographic:
+                raise SystemExit(f"{path}: zonal statistics need a lat/lon (geographic) raster")
             win = window_for_bbox(ds, bbox_of(geom))
             if win is None:
                 continue
@@ -67,18 +84,22 @@ def write_zone_table(zones, raster_paths, out_csv: str, class_set: str = "raw",
                      strip_rows: int = 1024) -> None:
     """Write zone x class areas to CSV. `zones` is [(name, geometry), ...]."""
     labels = CLASS_SETS[class_set]
+    raster_paths = dedupe_tiles(raster_paths)
     rows = []
     for name, geom in zones:
         acc = class_areas(geom, raster_paths, strip_rows)
-        total = sum(acc.values()) or 1.0
+        total = sum(acc.values())
         for code, area in sorted(acc.items()):
             rows.append({"zone": name, "class_code": code,
                          "class_label": labels.get(code, str(code)),
                          "area_ha": round(area, 1),
-                         "share_pct": round(100 * area / total, 3)})
+                         "share_pct": round(100 * area / total, 3) if total else ""})
         rows.append({"zone": name, "class_code": "TOTAL", "class_label": "total",
-                     "area_ha": round(total, 1), "share_pct": 100.0})
-        print(f"{name}: total {total:,.0f} ha across {len(acc)} classes")
+                     "area_ha": round(total, 1), "share_pct": 100.0 if total else ""})
+        if not total:
+            print(f"{name}: no valid pixels inside the supplied rasters")
+        else:
+            print(f"{name}: total {total:,.0f} ha across {len(acc)} classes")
 
     os.makedirs(os.path.dirname(os.path.abspath(out_csv)), exist_ok=True)
     with open(out_csv, "w", newline="", encoding="utf-8-sig") as f:
