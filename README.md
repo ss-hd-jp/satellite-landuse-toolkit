@@ -11,25 +11,34 @@ evidence of cause or legality. The toolkit's job is to make those tallies
 correct and to keep you from over-reading them; the interpretation rules that
 reviewers enforce are in [docs/pitfalls.md](docs/pitfalls.md).
 
-**Status:** pre-release (v1.0.0 candidate). An external review found several
-defects in an earlier draft (multi-tile handling, period end, tile naming,
-Sentinel-2 co-registration and offset handling, AOI masking); those are fixed
-and covered by `tests/`. Coverage of the datasets is global-ish but not
-universal — see *Limitations*.
+**Status:** pre-release (v1.0.0 candidate), not yet tagged. Two rounds of
+external review so far. The first found defects in an early draft (multi-tile
+handling, period end, tile naming, Sentinel-2 co-registration and offset
+handling, AOI masking). The second confirmed those fixes and raised further
+issues — behaviour when the Sentinel-2 correction state cannot be determined,
+an analysis window that clipped the AOI, hotspot ordering, scene-tag reuse,
+memory of the coverage denominator, water zones vanishing from the CSV, and
+tests without detection power — which this revision addresses. 21 regression
+tests pass (`tests/test_regression.py` lists exactly what is checked, and the
+new ones fail against the previous commit); a further re-review is planned
+before the release is tagged. Dataset coverage is global-ish, not universal —
+see *Limitations*.
 
 ## What it does
 
 | Command | Source | Output |
 |---|---|---|
-| `slandu fetch` | — | resolves the tiles your AOI touches, downloads them (`curl`), Sentinel-2 scene search |
-| `slandu landcover` | ESA WorldCover 10 m (2021) | area per class, per zone |
-| `slandu forest` | Hansen GFC 30 m (2001–2025) | annual tree-cover loss per zone, tile coverage, threshold sensitivity, ~1 km hotspot cells |
-| `slandu water` | JRC GSW v1.5 30 m (1984–2024) | transition classes per zone; connected water area around a seed point |
-| `slandu change` | Sentinel-2 L2A | two-date bare-ground change per zone on one reference grid with a **common valid mask**; run manifest |
+| `slandu fetch` | — | resolves the tiles the AOI's bounding box touches and downloads them (`curl`); Sentinel-2 scene search; a scene tag is bound to one scene id |
+| `slandu landcover` | ESA WorldCover 10 m (2021) | area per class, per zone (no coverage column) |
+| `slandu forest` | Hansen GFC 30 m (2001–2025) | annual tree-cover loss per zone with `tiles_coverage_pct`, threshold sensitivity, ~1 km hotspot cells ranked by loss |
+| `slandu water` | JRC GSW v1.5 30 m (1984–2024) | transition classes per zone with `tiles_coverage_pct` (every class row kept, zeros included); connected water area around a seed point (single tile, no coverage column) |
+| `slandu change` | Sentinel-2 L2A | two-date bare-ground change per zone on one reference grid: `in_both_scenes_pct` (AOI inside both footprints), `common_valid_pct` (AOI valid on both dates), run manifest |
 
-All tiles intersecting the AOI are summed; each result reports what share of
-the AOI the available tiles covered. Lat/lon pixel areas use the exact
-spherical latitude-band formula (that is cell area, not classification accuracy).
+`forest`, `water` (transitions) and `change` sum every tile or scene that
+intersects the AOI and report how much of the AOI was covered; `landcover` and
+the seed-point water body do not carry a coverage figure. Lat/lon pixel areas
+use the exact spherical latitude-band formula (that is cell area, not
+classification accuracy).
 
 ## Install
 
@@ -37,11 +46,12 @@ spherical latitude-band formula (that is cell area, not classification accuracy)
 git clone https://github.com/ss-hd-jp/satellite-landuse-toolkit.git
 cd satellite-landuse-toolkit
 pip install -r requirements.txt
-python -m pytest tests -q
+python tests/test_regression.py          # or: pip install -r requirements-dev.txt && python -m pytest tests -q
 ```
 
 Python 3.10+, `rasterio`, `numpy`, `scipy`, `Pillow`, and the external
-command **`curl`** on your PATH. No geopandas, no shapely.
+command **`curl`** on your PATH. No geopandas, no shapely. `pytest` is only
+needed for the second form of the test command.
 
 ## Quickstart
 
@@ -51,7 +61,9 @@ python -m slandu forest --bbox 138.55 36.95 138.75 37.10 --data-dir data/rasters
 ```
 
 `--aoi your_area.geojson` (EPSG:4326) instead of `--bbox` gives one row group
-per feature, for every command including `change`. Full walk-through:
+per feature for `landcover`, `forest`, `water` (transitions) and `change`;
+`fetch` only uses the union bounding box, and the seed-point water body is one
+region by construction. Full walk-through:
 [examples/quickstart.md](examples/quickstart.md).
 
 ## Reading the output
@@ -74,12 +86,18 @@ statistic is a *flow* (a field cropped twice counts twice) while land cover is
 a *stock*.
 
 **3. Two-date change depends on registration, scaling and masking.**
-`slandu change` reprojects both scenes onto one reference grid, decides the
-reflectance scaling per scene from its STAC sidecar and then checks it against
-water pixels (refusing to run on a double-applied offset), keeps SCL classes
-4/5/7 only, and compares only pixels valid on both dates (`common_valid_pct`).
-It cannot remove residual haze, shadow, BRDF or seasonal effects — one date
-pair is a candidate, not a finding.
+`slandu change` reprojects both scenes onto one reference grid whose window is
+the AOI's densified envelope (not two bbox corners); decides the reflectance
+scaling per scene and per band from its STAC sidecar and **stops when that
+state cannot be confirmed** (no sidecar, no provider flag on a post-04.00
+baseline, contradictory metadata) unless you state `--offset-a` /
+`--offset-b` after checking the product; then checks the result against
+SCL-water cells — a median NIR over ≥ 50 such cells outside −0.01…0.15 stops
+the run with a request for verification (a quality trigger, not proof of what
+was applied); keeps SCL classes 4/5/7 only; and compares only cells valid on
+both dates. Read `in_both_scenes_pct` (AOI inside both footprints) before
+`common_valid_pct`. It cannot remove residual haze, shadow, BRDF or seasonal
+effects — one date pair is a candidate, not a finding.
 
 ## Data sources
 
@@ -109,10 +127,17 @@ check the API metadata and footnote the difference.
 - Hansen covers 80°N–60°S; JRC and WorldCover have their own extents. AOIs
   crossing the antimeridian are not handled.
 - `change` samples the 10 m bands onto a `stride`×10 m grid (default 20 m) by
-  nearest neighbour; it does not aggregate every 10 m pixel. Scene footprints
-  are not checked — verify both scenes cover the AOI.
+  nearest neighbour; it does not aggregate every 10 m pixel. Cells outside
+  either scene's footprint count as not covered: the run stops below
+  `--min-coverage` (default 50 % of the AOI) and warns below 99 %.
+- `change` needs the STAC sidecar that `fetch.download_scene` writes. Without
+  it, or with metadata that does not settle the offset state, it stops until
+  you state the correction mode per scene.
 - Hotspot cells are blocks of pixels on the lat/lon grid (~1 km at the
   equator); the CSV gives the true cell area rather than assuming 1 km².
+- `tiles_coverage_pct` compares a tile-grid tally with an independent lat/lon
+  rasterization; a very small zone can show a fraction of a percent of
+  boundary effect without any tile missing.
 - Tiles are downloaded whole (Sentinel-2 band ≈150 MB, Hansen `treecover2000`
   ≈140 MB). `/vsicurl` is deliberately unused.
 

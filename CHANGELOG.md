@@ -1,9 +1,12 @@
 # Changelog
 
-## 1.0.0 — 2026-09 (release candidate)
+## 1.0.0 — 2026-09 (release candidate, not yet tagged)
 
-First public release. Before tagging, an external pre-publication review of the
-draft found the defects listed under *Fixed*; all are covered by `tests/`.
+First public release. Two external pre-publication reviews have been run on
+the draft. The defects they found are listed under *Fixed*; 21 regression
+tests pass (`tests/test_regression.py` lists what each one checks — the tests
+added for the second review fail against the previous commit `82d0643`). A
+further re-review is planned before tagging.
 
 ### Added
 - `slandu fetch` — resolve and download tiles (ESA WorldCover, Hansen GFC,
@@ -18,7 +21,44 @@ draft found the defects listed under *Fixed*; all are covered by `tests/`.
   run manifest
 - `docs/data_catalog.md`, `docs/pitfalls.md`, Japanese versions, `tests/`
 
-### Fixed (from the pre-publication review)
+### Fixed (second review, 2026-09-09)
+- `change` assumed "offset already applied" when the correction state could
+  not be determined (no sidecar; no provider flag on a post-04.00 baseline),
+  which turned an unchanged pair into 100 % new bare ground; now the run stops
+  unless the state is confirmed by the flag, by a pre-04.00 baseline, or by a
+  per-scene `--offset-a` / `--offset-b`; scale/offset are kept per band and the
+  decision with its evidence is written to the manifest
+- `change` built the analysis window from two bbox corners, clipping a lat/lon
+  rectangle that is rotated in UTM (~2.3 % of the README AOI); now the window
+  is the densified envelope (`transform_bounds`) snapped outward, and the
+  polygon mask is applied afterwards
+- `change` used the clipped window as the denominator of `zone_area_ha` and
+  `common_valid_pct`; now cells outside either scene footprint are counted as
+  not covered, `in_both_scenes_pct` is reported against the whole AOI, and the
+  run stops below `--min-coverage`
+- `water_sanity` prescribed a correction ("use --offset applied") from the sign
+  of the median alone; now it asks for verification and names possible causes
+- hotspots were sorted by cell area, not loss; now by unrounded loss area
+- `download_scene` overwrote the sidecar before downloading and `download`
+  skipped existing images, so re-using a tag for another scene left old images
+  with new metadata; now a tag is bound to one scene id (stop or `overwrite=True`)
+  and the sidecar is written last, only after every band downloaded
+- `expected_zone_area_ha` rasterized the whole AOI at once (6.4 GB for
+  20° × 10°); now strip-wise
+- `water_transitions.csv` dropped zones with no water; now every class row is
+  kept (zeros included) plus a per-zone TOTAL row
+- tests: synthetic scenes are now rendered from a ground-defined pattern per
+  grid, with negative controls (a geometry-ignoring reader and a two-corner
+  window must fail); added stale-offset, mixed-encoding, unknown/ambiguous
+  metadata, water-check, partial coverage, hotspot ordering, download failure
+  and tag re-use cases
+- docs: reflectance wording no longer treats a negative estimate as proof of a
+  double-applied offset; JA catalog synced (licences/credits, cropland
+  wording, JRC offset "usually sub-pixel, can reach or exceed one pixel");
+  README claims about coverage and per-feature output made per command;
+  `requirements-dev.txt` for pytest
+
+### Fixed (first review)
 - forest/water summed only the first tile found; now every intersecting tile is
   summed and coverage is reported
 - forest period end was taken from the last observed loss year; now from the

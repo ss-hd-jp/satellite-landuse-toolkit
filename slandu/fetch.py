@@ -128,14 +128,39 @@ def s2_search(bbox, start: str, end: str, max_cloud: float = 20.0, limit: int = 
 
 
 def download_scene(scene: dict, out_dir: str, tag: str,
-                   bands=("B04", "B08", "SCL")) -> list[str]:
+                   bands=("B04", "B08", "SCL"), overwrite: bool = False) -> list[str]:
     """Download selected bands as <tag>_<band>.tif plus a <tag>_stac.json sidecar.
 
     The sidecar keeps the full STAC item so `change` can decide how to scale
-    reflectance (offset flag, processing baseline, raster:bands) later.
+    reflectance later. A tag is bound to one scene: if files for `tag` already
+    exist and belong to a different scene id (or to no known scene), the call
+    stops - or, with overwrite=True, removes them first. The sidecar is written
+    last and only when every band downloaded, so images and metadata cannot
+    disagree.
     """
     os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, f"{tag}_stac.json"), "w", encoding="utf-8") as f:
-        json.dump(scene.get("item", scene), f)
+    item = scene.get("item", scene)
+    new_id = item.get("id") or scene.get("id")
+    side = os.path.join(out_dir, f"{tag}_stac.json")
+    band_files = [os.path.join(out_dir, f"{tag}_{b}.tif") for b in bands]
+    existing = [p for p in band_files if os.path.exists(p)]
+    old_id = None
+    if os.path.exists(side):
+        try:
+            old_id = json.load(open(side, encoding="utf-8")).get("id")
+        except (OSError, ValueError):
+            old_id = None
+    if existing and old_id != new_id:
+        if not overwrite:
+            raise SystemExit(f"tag {tag!r} already holds files for scene {old_id!r}; "
+                             f"use another tag, or overwrite=True, to fetch {new_id!r}")
+        for p in existing + ([side] if os.path.exists(side) else []):
+            os.remove(p)
     pairs = [(f"{tag}_{b}.tif", scene["assets"][b]) for b in bands]
-    return download(pairs, out_dir)
+    failed = download(pairs, out_dir)
+    if failed:
+        print(f"  {tag}: {len(failed)} band(s) failed; sidecar not written")
+        return failed
+    with open(side, "w", encoding="utf-8") as fh:
+        json.dump(item, fh)
+    return failed

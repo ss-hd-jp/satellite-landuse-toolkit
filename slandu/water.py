@@ -3,7 +3,8 @@
 `new permanent water` lumps together fish/shrimp ponds, reservoirs, channel
 migration and tidal effects. Never label it before looking at imagery.
 v1.5 mixes Landsat Collection 1 (to 2021) and Collection 2 (2022-2024); the
-provider notes a residual co-registration offset that can reach one 30 m pixel.
+provider notes a residual co-registration offset that is usually sub-pixel but
+can reach or exceed one 30 m pixel in places.
 """
 from __future__ import annotations
 
@@ -67,9 +68,11 @@ def transitions_by_zone(zones, data_dir: str, out_dir: str) -> None:
         w = csv.writer(f)
         w.writerow(["zone", "tiles_coverage_pct", "transition_code", "transition_label", "area_ha"])
         for i, (name, _) in enumerate(zones):
-            for c in range(1, 11):
-                if acc[i][c] > 0:
-                    w.writerow([name, f"{coverage[i]:.1f}", c, JRC_TRANSITIONS[c], f"{acc[i][c]:.1f}"])
+            for c in range(1, 11):          # every class, zeros included: a zone with
+                w.writerow([name, f"{coverage[i]:.1f}", c, JRC_TRANSITIONS[c],   # no water
+                            f"{acc[i][c]:.1f}"])                                 # still appears
+            w.writerow([name, f"{coverage[i]:.1f}", "TOTAL", "sum of classes 1-10",
+                        f"{acc[i][1:].sum():.1f}"])
             print(f"{name}: new permanent {acc[i][2]:,.0f} ha / lost permanent {acc[i][3]:,.0f} ha"
                   + ("" if coverage[i] >= 99 else f"  WARNING coverage {coverage[i]:.1f}%"))
     print("wrote", p)

@@ -58,8 +58,10 @@ def analyse(zones, data_dir: str, out_dir: str, threshold: int = 30,
     """Annual loss per zone + summary CSV. `zones` is [(name, geometry), ...].
 
     Every tile that intersects the AOI is read and summed. Coverage of the AOI
-    by the available tiles is reported; anything below ~99 % means tiles are
-    missing and totals are partial.
+    by the available tiles is reported against an independent lat/lon
+    rasterization of the zones; a value well below 99 % usually means a tile
+    is missing, but a small zone can also lose a fraction of a percent to
+    grid/boundary effects, so read the warning together with the tile list.
     """
     version, data_end, tiles = _tiles(data_dir)
     last_year = last_year or data_end
@@ -153,7 +155,8 @@ def analyse(zones, data_dir: str, out_dir: str, threshold: int = 30,
                         f"{annual[i][-10:].mean():.1f}" if n_years >= 10 else "",
                         version])
             if coverage[i] < 99:
-                print(f"  WARNING: {name}: tiles cover only {coverage[i]:.1f}% of the zone")
+                print(f"  WARNING: {name}: available tiles cover {coverage[i]:.1f}% of the zone "
+                      f"(missing tiles, or grid/boundary effects on a very small zone)")
     print("wrote", p, "(note: 'no_loss_detected' is NOT remaining forest)")
 
     p = os.path.join(out_dir, "forest_loss_threshold_sensitivity.csv")
@@ -166,14 +169,15 @@ def analyse(zones, data_dir: str, out_dir: str, threshold: int = 30,
     print("wrote", p)
 
     if hotspot_from is not None:
-        hotspot_rows.sort(key=lambda r: -r[3])
+        hotspot_rows.sort(key=lambda r: -r[2])          # by loss area, unrounded
         p = os.path.join(out_dir, f"forest_loss_hotspots_from{hotspot_from}.csv")
         with open(p, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
             w.writerow(["rank", "lat", "lon", "loss_ha", "cell_area_ha",
                         "loss_pct_of_cell", "zone_at_centre"])
-            for rank, row in enumerate(hotspot_rows[:40], 1):
-                w.writerow([rank] + row)
+            for rank, (lat, lon, loss_ha, cell_ha, pct, zone) in enumerate(hotspot_rows[:40], 1):
+                w.writerow([rank, f"{lat:.4f}", f"{lon:.4f}", f"{loss_ha:.1f}",
+                            f"{cell_ha:.1f}", f"{pct:.1f}", zone])
         print("wrote", p, "(cells are ~1 km squares of pixels on the lat/lon grid; "
                           "area is given per cell, not assumed to be 1 km^2)")
 
@@ -183,7 +187,7 @@ def analyse(zones, data_dir: str, out_dir: str, threshold: int = 30,
 
 def _hotspots(loss, canopy_in_aoi, zone_ids, names, tr, ha, from_year, last_idx):
     """Loss since `from_year` aggregated into blocks of k x k pixels (~1 km at the
-    equator). Returns rows [lat, lon, loss_ha, cell_area_ha, loss_pct, zone]."""
+    equator). Returns unrounded rows [lat, lon, loss_ha, cell_area_ha, loss_pct, zone]."""
     idx = from_year - FIRST_YEAR + 1
     hit = canopy_in_aoi & (loss >= idx) & (loss <= last_idx)
     k = max(1, int(round(1000 / (tr.a * 111_320))))
@@ -202,7 +206,6 @@ def _hotspots(loss, canopy_in_aoi, zone_ids, names, tr, ha, from_year, last_idx)
             rc, cc = (r0 + r1) // 2, (c0 + c1) // 2
             lon, lat = tr * (cc + 0.5, rc + 0.5)
             zid = int(zone_ids[rc, cc])
-            rows.append([f"{lat:.4f}", f"{lon:.4f}", round(loss_ha, 1),
-                         round(cell_ha, 1), round(100 * loss_ha / cell_ha, 1),
+            rows.append([lat, lon, loss_ha, cell_ha, 100 * loss_ha / cell_ha,
                          names[zid - 1] if zid else ""])
     return rows

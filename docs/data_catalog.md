@@ -89,18 +89,31 @@ conditions; treat those as examples, not as constants.
 - **Reflectance scaling — read this.** Since processing baseline 04.00
   (25 Jan 2022) L2A products carry a BOA add-offset (−1000 DN). The Earth Search
   provider states that the offset "has been applied to some of the Items" during
-  COG conversion and tells users to check `raster:bands` scale/offset. In
-  practice the item metadata can be contradictory *(observed 2026-09, tile 51NUA,
-  baseline 05.11: `earthsearch:boa_offset_applied: true` **and**
-  `raster:bands.offset: -0.1` on the same asset)*. Deciding from the pixels:
-  water-class NIR had median DN 146 → 0.015 with plain `DN×1e-4`, and −0.085 if
-  the −0.1 were applied again; vegetation NIR 0.277. So for that item the
-  offset was already in the pixels and the `raster:bands` offset was stale.
-  `slandu change` therefore (a) records the STAC item in a sidecar, (b) uses
-  `earthsearch:boa_offset_applied` when present, and (c) checks the median NIR
-  of SCL-water pixels and **refuses to run** if scaling yields negative water or
-  implausibly bright water. Override with `--offset applied|apply` if you know
-  better, and say which you used.
+  COG conversion and tells users to check `raster:bands` scale/offset. The item
+  metadata can be internally inconsistent *(observed 2026-09, item
+  `S2B_51NUA_20260118_0_L2A`, baseline 05.11: `earthsearch:boa_offset_applied: true`
+  **and** `raster:bands.offset: -0.1` on the same asset)*. For that item the
+  pixels point the same way as the flag: SCL-water NIR had a raw DN median of
+  146 → 0.015 with plain `DN×1e-4`, and −0.085 if −0.1 were applied on top;
+  vegetation NIR DN 2772 → 0.277. A strongly negative water median is strong
+  grounds to *suspect* a doubly applied offset, but it is not proof of the
+  processing history: negative surface-reflectance *estimates* over very dark
+  targets do occur (the offset exists partly to encode them — see the
+  Sentinel-2 L2A Data Quality Report), and the conclusive check is a comparison
+  of the same ground pixels with the original ESA/Sinergise product.
+  Procedure used here: read raw DN under SCL class 6, take the median, apply
+  each candidate scaling, compare with the clear-water NIR range.
+  `slandu change` therefore (a) keeps the STAC item as a sidecar; (b) decides
+  per scene and per band — provider flag present → follow it (a contradicting
+  `raster:bands` offset is logged, not applied); flag absent and baseline
+  < 04.00 → no offset; anything else (no sidecar, flag absent on a baseline
+  ≥ 04.00, `false` with unknown baseline) → **stop**, and ask you to state
+  `--offset-a` / `--offset-b` = `applied | apply | none` after checking the
+  product; (c) computes the median NIR over SCL-water cells and, when there are
+  at least 50 of them and the median is below −0.01 or above 0.15, stops with a
+  request for verification. That message says the scaling or the scene quality
+  needs checking; it does not tell you which correction to use. The decision
+  and its evidence go into the run manifest.
 - **Traps**: a low scene-level cloud percentage says nothing about your AOI —
   mask always. Scenes from older baselines can have sea-surface NIR far above
   clear-water values *(observed: baseline 02.13 scene, water NIR median DN 613)*,

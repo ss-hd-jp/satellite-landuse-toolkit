@@ -154,19 +154,31 @@ def rasterize_zones(geoms_values, transform, shape, all_touched: bool = False,
                      fill=0, dtype=dtype, all_touched=all_touched)
 
 
-def expected_zone_area_ha(zones, bbox, pixel_deg: float = 1 / 4000) -> np.ndarray:
-    """Area of each zone by rasterizing it on a synthetic lat/lon grid.
+def expected_zone_area_ha(zones, bbox, pixel_deg: float = 1 / 4000,
+                          strip_rows: int = 2048) -> np.ndarray:
+    """Area of each zone by rasterizing it on a synthetic lat/lon grid, strip by
+    strip, so memory is bounded by one strip rather than by the AOI.
 
     Used to report what share of the AOI the available tiles actually covered.
+    Numerator and denominator are rasterized on different grids, so a very
+    small zone can show a fraction of a percent of boundary effect.
     """
     from rasterio.transform import from_origin
     minx, miny, maxx, maxy = bbox
     w = max(1, int(math.ceil((maxx - minx) / pixel_deg)))
     h = max(1, int(math.ceil((maxy - miny) / pixel_deg)))
-    tr = from_origin(minx, maxy, pixel_deg, pixel_deg)
-    ids = rasterize_zones([(g, i + 1) for i, (_, g) in enumerate(zones)], tr, (h, w))
-    ha = row_area_m2(maxy, pixel_deg, h, pixel_deg) / 10_000.0
-    return np.array([sum_area_ha(ids == i + 1, ha) for i in range(len(zones))])
+    geoms = [(g, i + 1) for i, (_, g) in enumerate(zones)]
+    out = np.zeros(len(zones))
+    for r0 in range(0, h, strip_rows):
+        rows = min(strip_rows, h - r0)
+        top = maxy - r0 * pixel_deg
+        ids = rasterize_zones(geoms, from_origin(minx, top, pixel_deg, pixel_deg), (rows, w))
+        if not ids.any():
+            continue
+        ha = row_area_m2(top, pixel_deg, rows, pixel_deg) / 10_000.0
+        for i in range(len(zones)):
+            out[i] += sum_area_ha(ids == i + 1, ha)
+    return out
 
 
 # ---------------------------------------------------------------- tile naming

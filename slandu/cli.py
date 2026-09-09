@@ -70,7 +70,9 @@ def cmd_change(args):
     zones, box = _aoi(args)
     bare_change(args.s2_dir, args.tag_a, args.tag_b, box, args.out_dir,
                 zones=None if args.bbox else zones, stride=args.stride,
-                label=args.label, offset_mode=args.offset)
+                label=args.label, offset_mode=args.offset,
+                offset_mode_a=args.offset_a, offset_mode_b=args.offset_b,
+                min_coverage_pct=args.min_coverage)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -123,8 +125,16 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--tag-a", required=True, help="earlier scene tag")
     sp.add_argument("--tag-b", required=True, help="later scene tag (defines the grid)")
     sp.add_argument("--stride", type=int, default=2, help="analysis cell = stride x 10 m")
-    sp.add_argument("--offset", default="auto", choices=["auto", "applied", "apply"],
-                    help="BOA offset handling (auto = sidecar + water sanity check)")
+    modes = ["auto", "applied", "apply", "none"]
+    sp.add_argument("--offset", default="auto", choices=modes,
+                    help="BOA offset handling for both scenes: auto = decide from each "
+                         "scene's STAC sidecar and stop if it cannot be confirmed; "
+                         "applied = pixels already corrected; apply = add the negative "
+                         "offset; none = pre-offset product")
+    sp.add_argument("--offset-a", choices=modes, help="override for the earlier scene")
+    sp.add_argument("--offset-b", choices=modes, help="override for the later scene")
+    sp.add_argument("--min-coverage", type=float, default=50.0,
+                    help="stop if less than this %% of the AOI lies inside both scenes")
     sp.add_argument("--label", default="aoi")
     sp.set_defaults(func=cmd_change)
     return p
