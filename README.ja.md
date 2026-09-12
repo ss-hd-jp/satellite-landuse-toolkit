@@ -1,5 +1,7 @@
 # satellite-landuse-toolkit（日本語）
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22730573.svg)](https://doi.org/10.5281/zenodo.22730573)
+
 **無料・アカウント不要の公開衛星データ**（ESA WorldCover、Hansen Global Forest
 Change、JRC Global Surface Water、Sentinel-2 L2A）から、土地被覆・樹冠消失・水域変化を
 ローカルで再現可能に集計するツールです。Earth Engine もAPIキーも使いません。
@@ -129,7 +131,14 @@ NIR中央値が −0.01〜0.15 の外なら「確認が必要」として停止�
 
 ## 引用
 
-Zenodoでアーカイブした版（[CITATION.cff](CITATION.cff)）と、使った各データセットを別々に引用してください。
+Zenodoでアーカイブした版と、使った各データセットを別々に引用してください。
+
+- 全版共通（Concept DOI）：`10.5281/zenodo.22730573`
+- v1.0.0（この版）：`10.5281/zenodo.22730574` — https://doi.org/10.5281/zenodo.22730574
+
+Suzuki, K. (2026). *satellite-landuse-toolkit: land-use, forest-loss and surface-water analysis
+from free satellite data* (v1.0.0). Zenodo. https://doi.org/10.5281/zenodo.22730574
+（機械可読形式は [CITATION.cff](CITATION.cff)）
 
 ## ライセンス
 

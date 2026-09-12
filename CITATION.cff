@@ -8,6 +8,14 @@ authors:
     affiliation: "Space Seed Holdings Inc."
     # orcid: "https://orcid.org/0000-0000-0000-0000"   # fill in before release
 repository-code: "https://github.com/ss-hd-jp/satellite-landuse-toolkit"
+doi: 10.5281/zenodo.22730574
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.22730574
+    description: "This version (v1.0.0)"
+  - type: doi
+    value: 10.5281/zenodo.22730573
+    description: "All versions (concept DOI)"
 abstract: >-
   A Python toolkit that tallies land cover, tree-cover loss and surface-water change for an area of interest from free, account-free satellite products (ESA WorldCover, Hansen Global Forest Change, JRC Global Surface Water, Sentinel-2 L2A). It runs locally without Earth Engine or API keys, sums every tile that intersects the area and reports tile coverage, integrates lat/lon pixel areas with the spherical latitude-band formula, and applies the interpretation rules reviewers enforce: tree-cover loss is never reported as remaining forest, two-date Sentinel-2 comparisons are made on one reference grid with a common valid-pixel mask and a checked reflectance scaling, and canopy threshold sensitivity is reported for forest results. Outputs are map-pixel tallies, not statistical area estimates.
 keywords:

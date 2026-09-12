@@ -1,5 +1,7 @@
 # satellite-landuse-toolkit
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22730573.svg)](https://doi.org/10.5281/zenodo.22730573)
+
 Local, reproducible tallies of land cover, tree-cover loss and surface-water
 change from **free, account-free satellite products** — ESA WorldCover, Hansen
 Global Forest Change, JRC Global Surface Water and Sentinel-2 L2A. No Earth
@@ -162,8 +164,15 @@ check the API metadata and footnote the difference.
 
 ## Citing
 
-Cite the archived release (Zenodo DOI, see [CITATION.cff](CITATION.cff)) and,
-separately, every upstream dataset you used.
+Cite the archived release and, separately, every upstream dataset you used.
+
+- All versions (concept DOI): `10.5281/zenodo.22730573`
+- v1.0.0 (this version): `10.5281/zenodo.22730574` — https://doi.org/10.5281/zenodo.22730574
+
+Suzuki, K. (2026). *satellite-landuse-toolkit: land-use, forest-loss and
+surface-water analysis from free satellite data* (v1.0.0). Zenodo.
+https://doi.org/10.5281/zenodo.22730574 — machine-readable form in
+[CITATION.cff](CITATION.cff).
 
 ## Licence
 
