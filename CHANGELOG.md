@@ -2,11 +2,12 @@
 
 ## 1.0.0 — 2026-09 (release candidate, not yet tagged)
 
-First public release. Five external pre-publication reviews have been run on
-the draft. The defects they found are listed under *Fixed*; 25 regression
-tests pass (`tests/test_regression.py` lists what each one checks — the tests
-added for the second to fifth reviews fail against the commit each review
-examined). `examples/run_record_example.md` ties a real run on the
+First public release. Six external pre-publication reviews have been run on
+the draft; the sixth (on `2b9db7b`) raised no further findings within its
+scope. The defects the earlier ones found are listed under *Fixed*; 25
+regression tests pass (`tests/test_regression.py` lists what each one checks —
+the tests added for the second to fifth reviews fail against the commit each
+review examined). `examples/run_record_example.md` ties a real run on the
 bundled example AOI to its inputs, versions, commands and outputs; the fourth
 review reproduced all six output CSVs byte-for-byte from the recorded inputs.
 

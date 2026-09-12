@@ -24,9 +24,13 @@ clusters CSV after a zero-change re-run); the fourth confirmed those fixes,
 reproduced the example run record byte-for-byte, and found one more (a tag
 matched by prefix, so overwriting `early` could delete `early_wet`); the
 fifth confirmed that fix and found a Windows-specific one (tags differing
-only in letter case are one set of files there), fixed here. 25 regression
-tests pass (`tests/test_regression.py` lists exactly what is checked; the
-tests added for each review fail against the commit that review examined). A real run on the bundled example AOI, with inputs,
+only in letter case are one set of files there); the sixth confirmed that
+fix and raised no further findings within its scope (diff, regression
+tests, tag handling). 25 regression tests pass (`tests/test_regression.py`
+lists exactly what is checked; the tests added for each review fail against
+the commit that review examined). None of the reviews validated the
+classification accuracy of any dataset in any region, and none covered a
+real two-scene Sentinel-2 run — see *Reading the output*. A real run on the bundled example AOI, with inputs,
 versions, commands and outputs, is recorded in
 [examples/run_record_example.md](examples/run_record_example.md).
 Dataset coverage is global-ish, not universal — see *Limitations*.
