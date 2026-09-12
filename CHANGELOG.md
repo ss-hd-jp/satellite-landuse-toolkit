@@ -4,7 +4,7 @@
 
 First public release. Six external pre-publication reviews have been run on
 the draft; the sixth (on `2b9db7b`) raised no further findings within its
-scope. The defects the earlier ones found are listed under *Fixed*; 25
+scope. The defects the earlier ones found are listed under *Fixed*; 26
 regression tests pass (`tests/test_regression.py` lists what each one checks —
 the tests added for the second to fifth reviews fail against the commit each
 review examined). `examples/run_record_example.md` ties a real run on the
@@ -23,6 +23,14 @@ review reproduced all six output CSVs byte-for-byte from the recorded inputs.
   common valid mask, per-scene reflectance scaling with a water sanity check,
   run manifest
 - `docs/data_catalog.md`, `docs/pitfalls.md`, Japanese versions, `tests/`
+
+### Fixed (found in use, 2026-09-12)
+- `water_body` read the occurrence and transitions tiles with windows computed
+  independently per file; real tiles of the same name carry origins that
+  differ by ~1e-13 degrees (observed on `140E_50N`: 140.00000000000023 vs
+  140.0), so the windows differed by one pixel and the run crashed (or, with
+  the opposite sign, silently misaligned). Transitions are now read onto the
+  occurrence window's grid
 
 ### Fixed (fifth review, 2026-09-12)
 - `download_scene` compared tags case-sensitively while the filesystem may

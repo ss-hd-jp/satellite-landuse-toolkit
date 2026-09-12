@@ -87,25 +87,35 @@ def water_body(seed_lon: float, seed_lat: float, bbox, data_dir: str, out_dir: s
     and may split a lake in two at the threshold. It is not a validated lake
     boundary and it is not the provider's Maximum Water Extent layer.
     """
+    from rasterio.enums import Resampling
+    from rasterio.warp import reproject
     from scipy import ndimage
 
-    def read_box(product):
+    def single_tile(product):
         hits = []
         for path in _tiles(data_dir, product):
             with rasterio.open(path) as ds:
-                win = window_for_bbox(ds, bbox)
-                if win is not None:
-                    hits.append((path, win))
+                if window_for_bbox(ds, bbox) is not None:
+                    hits.append(path)
         if len(hits) != 1:
             raise SystemExit(f"water_body needs the bbox inside exactly one {product} tile "
                              f"(found {len(hits)}); shrink the bbox or move it")
-        path, win = hits[0]
-        with rasterio.open(path) as ds:
-            return ds.read(1, window=win), ds.window_transform(win)
+        return hits[0]
 
-    occ, tr = read_box("occurrence")
-    trans, _ = read_box("transitions")
-    trans = trans[:occ.shape[0], :occ.shape[1]]
+    with rasterio.open(single_tile("occurrence")) as ds:
+        win = window_for_bbox(ds, bbox)
+        occ = ds.read(1, window=win)
+        tr = ds.window_transform(win)
+        crs = ds.crs
+    # The transitions tile nominally shares the occurrence grid, but its
+    # georeferencing can differ by floating-point noise (observed on tile
+    # 140E_50N: origin 140.00000000000023 vs 140.0), which moves an
+    # independently computed window by one pixel. Read it onto the occurrence
+    # window's grid instead of assuming equal windows.
+    trans = np.zeros(occ.shape, np.uint8)
+    with rasterio.open(single_tile("transitions")) as ds:
+        reproject(rasterio.band(ds, 1), trans, dst_transform=tr, dst_crs=crs,
+                  resampling=Resampling.nearest, dst_nodata=0)
 
     ha = row_area_m2(tr.f, -tr.e, occ.shape[0], tr.a) / 10_000.0
     valid = occ <= 100

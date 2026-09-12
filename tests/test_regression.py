@@ -174,6 +174,30 @@ def test_water_zone_without_water_is_still_listed():
         assert float(rows[0]["tiles_coverage_pct"]) > 97
 
 
+def test_water_body_tolerates_float_noise_between_occurrence_and_transitions_grids():
+    """Real JRC tiles of the same name can carry origins that differ by ~1e-13
+    degrees; a window computed per product then differs by one pixel and the
+    two arrays no longer line up (or cannot be combined at all)."""
+    for eps in (1e-12, -1e-12):
+        with tempfile.TemporaryDirectory() as d:
+            n = 100
+            occ = np.zeros((n, n), np.uint8)
+            occ[30:60, 40:70] = 100                      # one lake, always water
+            trans = np.where(occ == 100, 1, 0).astype(np.uint8)
+            write_tif(os.path.join(d, "occurrence_120E_10N_v1_5_2024.tif"), occ,
+                      from_origin(120, 10, PX, PX))
+            write_tif(os.path.join(d, "transitions_120E_10N_v1_5_2024.tif"), trans,
+                      from_origin(120 + eps, 10 - eps, PX, PX))
+            bbox = (120 + 20 * PX, 10 - 80 * PX, 120 + 90 * PX, 10 - 20 * PX)   # window edges on
+            water.water_body(120 + 55 * PX, 10 - 45 * PX, bbox, d, os.path.join(d, "out"),   # pixel bounds
+                             label="lake")
+            rows = {r["metric"]: r["area_ha"] for r in
+                    read_csv(os.path.join(d, "out", "lake_water_summary.csv"))}
+            lake = float(rows["connected_area_occurrence>=95%"])
+            assert lake > 0
+            assert abs(float(rows["transition:permanent"]) - lake) < 1e-6, (eps, rows)
+
+
 # ================================================================ fetch
 
 def test_download_failure_is_not_cached():
