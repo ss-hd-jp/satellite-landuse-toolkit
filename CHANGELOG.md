@@ -2,11 +2,11 @@
 
 ## 1.0.0 — 2026-09 (release candidate, not yet tagged)
 
-First public release. Four external pre-publication reviews have been run on
-the draft. The defects they found are listed under *Fixed*; 24 regression
+First public release. Five external pre-publication reviews have been run on
+the draft. The defects they found are listed under *Fixed*; 25 regression
 tests pass (`tests/test_regression.py` lists what each one checks — the tests
-added for the second, third and fourth reviews fail against the commit each
-review examined). `examples/run_record_example.md` ties a real run on the
+added for the second to fifth reviews fail against the commit each review
+examined). `examples/run_record_example.md` ties a real run on the
 bundled example AOI to its inputs, versions, commands and outputs; the fourth
 review reproduced all six output CSVs byte-for-byte from the recorded inputs.
 
@@ -22,6 +22,14 @@ review reproduced all six output CSVs byte-for-byte from the recorded inputs.
   common valid mask, per-scene reflectance scaling with a water sanity check,
   run manifest
 - `docs/data_catalog.md`, `docs/pitfalls.md`, Japanese versions, `tests/`
+
+### Fixed (fifth review, 2026-09-12)
+- `download_scene` compared tags case-sensitively while the filesystem may
+  not: on Windows, fetching a scene under `early` when `Early_*` existed found
+  no files of its own, skipped the (identical) old images and wrote the new
+  sidecar next to them — with or without `overwrite`. Tags that differ only
+  in letter case from an existing tag are now refused on every platform
+  (`fetch.tags_present`)
 
 ### Fixed (fourth review, 2026-09-12)
 - `download_scene` matched a tag's files by prefix (`<tag>_*.tif`), so tag

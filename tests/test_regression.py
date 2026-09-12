@@ -384,6 +384,47 @@ def test_download_scene_matches_the_tag_exactly_not_as_a_prefix():
             fetch.download = orig
 
 
+def test_download_scene_refuses_tags_that_differ_only_in_case():
+    """On Windows/macOS `Early_B04.tif` and `early_B04.tif` are one file, so a
+    case-variant tag would skip the old images and write a new sidecar next to
+    them. The refusal is unconditional so behaviour is the same on Linux."""
+    calls = []
+
+    def fake_download(pairs, out_dir, **kw):
+        calls.append(pairs)
+        for name, _ in pairs:
+            open(os.path.join(out_dir, name), "wb").write(b"z" * 5000)
+        return []
+    with tempfile.TemporaryDirectory() as d:
+        orig = fetch.download
+        fetch.download = fake_download
+        try:
+            assets = {b: "u" for b in ("B04", "B08", "SCL")}
+            old = {"item": {"id": "old-scene", "properties": {"earthsearch:boa_offset_applied": True}},
+                   "assets": assets}
+            new = {"item": {"id": "new-scene", "properties": {"earthsearch:boa_offset_applied": False}},
+                   "assets": assets}
+            fetch.download_scene(old, d, "Early")
+            before = {n: open(os.path.join(d, n), "rb").read() for n in os.listdir(d)}
+            for ow in (False, True):
+                try:
+                    fetch.download_scene(new, d, "early", overwrite=ow)
+                except SystemExit as e:
+                    assert "Early" in str(e) and "case" in str(e)
+                else:
+                    raise AssertionError(f"case-variant tag accepted (overwrite={ow})")
+            assert len(calls) == 1                                   # nothing fetched again
+            after = {n: open(os.path.join(d, n), "rb").read() for n in os.listdir(d)}
+            assert after == before                                   # nothing touched
+            assert json.load(open(os.path.join(d, "Early_stac.json")))["id"] == "old-scene"
+            # unrelated tags are still fine, and so is the exact spelling
+            assert fetch.download_scene(new, d, "early_wet") == []
+            assert fetch.download_scene(new, d, "Early", overwrite=True) == []
+            assert json.load(open(os.path.join(d, "Early_stac.json")))["id"] == "new-scene"
+        finally:
+            fetch.download = orig
+
+
 def test_change_cluster_csv_is_rewritten_when_change_drops_to_zero():
     with tempfile.TemporaryDirectory() as d:
         render_scene(d, "a", (500000, 60000), 120, BARE, WATER, flag=False, baseline="02.13")

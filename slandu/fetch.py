@@ -148,6 +148,21 @@ def tag_files(out_dir: str, tag: str) -> list[str]:
     return sorted(out)
 
 
+def tags_present(out_dir: str) -> set[str]:
+    """Tag spellings that own at least one `<tag>_<BAND>.tif` or `<tag>_stac.json`."""
+    tags = set()
+    if not os.path.isdir(out_dir):
+        return tags
+    for name in os.listdir(out_dir):
+        stem, ext = os.path.splitext(name)
+        if ext.lower() not in (".tif", ".json"):
+            continue
+        prefix, sep, last = stem.rpartition("_")
+        if sep and prefix and last:
+            tags.add(prefix)
+    return tags
+
+
 def download_scene(scene: dict, out_dir: str, tag: str,
                    bands=("B04", "B08", "SCL"), overwrite: bool = False) -> list[str]:
     """Download selected bands as <tag>_<band>.tif plus a <tag>_stac.json sidecar.
@@ -161,11 +176,22 @@ def download_scene(scene: dict, out_dir: str, tag: str,
     removed first, so bands of two scenes can never share a tag. The sidecar
     is written last and only when every requested band downloaded, so images
     and metadata cannot disagree.
+
+    Tags that differ only in letter case are refused on every platform: on a
+    case-insensitive filesystem (Windows, macOS by default) `Early_B04.tif`
+    and `early_B04.tif` are the same file, so a case-variant tag would skip
+    the old images and attach the new sidecar to them.
     """
     os.makedirs(out_dir, exist_ok=True)
     item = scene.get("item", scene)
     new_id = item.get("id") or scene.get("id")
     side = os.path.join(out_dir, f"{tag}_stac.json")
+    clashes = sorted(t for t in tags_present(out_dir)
+                     if t != tag and t.casefold() == tag.casefold())
+    if clashes:
+        raise SystemExit(f"tag {tag!r} differs only in letter case from existing tag(s) "
+                         f"{clashes}; on case-insensitive filesystems these are the same files - "
+                         f"reuse the existing spelling or choose a different tag")
     existing = tag_files(out_dir, tag)
     old_id = None
     if os.path.exists(side):

@@ -22,10 +22,11 @@ tests without detection power. The third confirmed those and found two
 remaining gaps (tag reuse when only some bands are requested; a stale
 clusters CSV after a zero-change re-run); the fourth confirmed those fixes,
 reproduced the example run record byte-for-byte, and found one more (a tag
-matched by prefix, so overwriting `early` could delete `early_wet`), fixed
-here. 24 regression tests pass (`tests/test_regression.py` lists exactly what
-is checked; the tests added for each review fail against the commit that
-review examined). A real run on the bundled example AOI, with inputs,
+matched by prefix, so overwriting `early` could delete `early_wet`); the
+fifth confirmed that fix and found a Windows-specific one (tags differing
+only in letter case are one set of files there), fixed here. 25 regression
+tests pass (`tests/test_regression.py` lists exactly what is checked; the
+tests added for each review fail against the commit that review examined). A real run on the bundled example AOI, with inputs,
 versions, commands and outputs, is recorded in
 [examples/run_record_example.md](examples/run_record_example.md).
 Dataset coverage is global-ish, not universal — see *Limitations*.
@@ -141,6 +142,9 @@ check the API metadata and footnote the difference.
 - `change` needs the STAC sidecar that `fetch.download_scene` writes. Without
   it, or with metadata that does not settle the offset state, it stops until
   you state the correction mode per scene.
+- Scene tags name files (`<tag>_B04.tif`, `<tag>_stac.json`): band names
+  carry no underscore, a tag is bound to one scene id, and tags that differ
+  only in letter case are refused (they are the same files on Windows/macOS).
 - Hotspot cells are blocks of pixels on the lat/lon grid (~1 km at the
   equator); the CSV gives the true cell area rather than assuming 1 km².
 - `tiles_coverage_pct` compares a tile-grid tally with an independent lat/lon
