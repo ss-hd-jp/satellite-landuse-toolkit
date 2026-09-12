@@ -6,7 +6,6 @@ environments; the whole toolkit assumes local files.
 """
 from __future__ import annotations
 
-import glob
 import json
 import os
 import subprocess
@@ -128,13 +127,35 @@ def s2_search(bbox, start: str, end: str, max_cloud: float = 20.0, limit: int = 
     return rows
 
 
+def tag_files(out_dir: str, tag: str) -> list[str]:
+    """Every `<tag>_<BAND>.tif` belonging to exactly this tag.
+
+    Band names carry no underscore, so the band is the last `_`-separated
+    token and everything before it must equal the tag: `early` owns
+    `early_B04.tif` but not `early_wet_B04.tif`. A prefix match would make one
+    tag's overwrite delete another tag's scene.
+    """
+    out = []
+    if not os.path.isdir(out_dir):
+        return out
+    for name in os.listdir(out_dir):
+        stem, ext = os.path.splitext(name)
+        if ext.lower() != ".tif":
+            continue
+        prefix, sep, band = stem.rpartition("_")
+        if sep and prefix == tag and band:
+            out.append(os.path.join(out_dir, name))
+    return sorted(out)
+
+
 def download_scene(scene: dict, out_dir: str, tag: str,
                    bands=("B04", "B08", "SCL"), overwrite: bool = False) -> list[str]:
     """Download selected bands as <tag>_<band>.tif plus a <tag>_stac.json sidecar.
 
     The sidecar keeps the full STAC item so `change` can decide how to scale
-    reflectance later. A tag is bound to one scene: if ANY `<tag>_*.tif` already
-    exists (whatever bands were requested this time) and the tag's sidecar
+    reflectance later. A tag is bound to one scene: if ANY `<tag>_<BAND>.tif` of
+    exactly this tag already exists (whatever bands were requested this time,
+    see `tag_files`) and the tag's sidecar
     names a different scene id - or no sidecar exists to say which scene they
     belong to - the call stops. With overwrite=True every file of the tag is
     removed first, so bands of two scenes can never share a tag. The sidecar
@@ -145,7 +166,7 @@ def download_scene(scene: dict, out_dir: str, tag: str,
     item = scene.get("item", scene)
     new_id = item.get("id") or scene.get("id")
     side = os.path.join(out_dir, f"{tag}_stac.json")
-    existing = sorted(glob.glob(glob.escape(os.path.join(out_dir, tag)) + "_*.tif"))
+    existing = tag_files(out_dir, tag)
     old_id = None
     if os.path.exists(side):
         try:

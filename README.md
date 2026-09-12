@@ -20,11 +20,14 @@ an analysis window that clipped the AOI, hotspot ordering, scene-tag reuse,
 memory of the coverage denominator, water zones vanishing from the CSV, and
 tests without detection power. The third confirmed those and found two
 remaining gaps (tag reuse when only some bands are requested; a stale
-clusters CSV after a zero-change re-run), fixed here. 23 regression tests
-pass (`tests/test_regression.py` lists exactly what is checked; the tests
-added for each review fail against the commit that review examined). A real
-run on the bundled example AOI, with inputs, versions, commands and outputs,
-is recorded in [examples/run_record_example.md](examples/run_record_example.md).
+clusters CSV after a zero-change re-run); the fourth confirmed those fixes,
+reproduced the example run record byte-for-byte, and found one more (a tag
+matched by prefix, so overwriting `early` could delete `early_wet`), fixed
+here. 24 regression tests pass (`tests/test_regression.py` lists exactly what
+is checked; the tests added for each review fail against the commit that
+review examined). A real run on the bundled example AOI, with inputs,
+versions, commands and outputs, is recorded in
+[examples/run_record_example.md](examples/run_record_example.md).
 Dataset coverage is global-ish, not universal — see *Limitations*.
 
 ## What it does

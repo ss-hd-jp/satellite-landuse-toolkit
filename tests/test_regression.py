@@ -248,8 +248,7 @@ def test_download_scene_checks_every_band_of_the_tag_not_only_the_requested_ones
             assert not os.path.exists(os.path.join(d, "t_B03.tif"))
             # a partial overwrite must not leave the other scene's bands behind
             fetch.download_scene(new, d, "t", bands=("B04",), overwrite=True)
-            left = sorted(os.path.basename(p) for p in
-                          __import__("glob").glob(os.path.join(d, "t_*")))
+            left = sorted(n for n in os.listdir(d) if n.startswith("t_"))
             assert left == ["t_B04.tif", "t_stac.json"], left
             assert json.load(open(os.path.join(d, "t_stac.json")))["id"] == "new-scene"
             # files of unknown provenance (no sidecar) are refused too
@@ -351,6 +350,38 @@ def test_change_detects_a_real_change_of_known_size():
         render_scene(d, "b", (500030, 59970), 120, extra, WATER, flag=True)
         row = _run(d)["rows"][0]
         assert abs(row["new_bare_ha"] - 1.0) < 0.05 and row["no_longer_bare_ha"] == 0.0, row
+
+
+def test_download_scene_matches_the_tag_exactly_not_as_a_prefix():
+    def fake_download(pairs, out_dir, **kw):
+        for name, _ in pairs:
+            open(os.path.join(out_dir, name), "wb").write(name.encode() * 200)
+        return []
+    with tempfile.TemporaryDirectory() as d:
+        orig = fetch.download
+        fetch.download = fake_download
+        try:
+            assets = {b: "u" for b in ("B04", "B08", "SCL")}
+            wet = {"item": {"id": "wet-scene"}, "assets": assets}
+            other = {"item": {"id": "other-scene"}, "assets": assets}
+            fetch.download_scene(wet, d, "early_wet")
+            wet_files = {n: open(os.path.join(d, n), "rb").read()
+                         for n in os.listdir(d) if n.startswith("early_wet_")}
+            assert len(wet_files) == 4
+            assert fetch.tag_files(d, "early") == []
+            # a new tag that is a prefix of an existing one must be accepted ...
+            assert fetch.download_scene(other, d, "early") == []
+            assert json.load(open(os.path.join(d, "early_stac.json")))["id"] == "other-scene"
+            # ... and overwriting it must not touch the other tag's files
+            newer = {"item": {"id": "newer-scene"}, "assets": assets}
+            fetch.download_scene(newer, d, "early", overwrite=True)
+            assert json.load(open(os.path.join(d, "early_stac.json")))["id"] == "newer-scene"
+            for n, body in wet_files.items():
+                assert open(os.path.join(d, n), "rb").read() == body, n
+            assert sorted(os.path.basename(p) for p in fetch.tag_files(d, "early")) == \
+                ["early_B04.tif", "early_B08.tif", "early_SCL.tif"]
+        finally:
+            fetch.download = orig
 
 
 def test_change_cluster_csv_is_rewritten_when_change_drops_to_zero():

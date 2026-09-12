@@ -2,12 +2,13 @@
 
 ## 1.0.0 — 2026-09 (release candidate, not yet tagged)
 
-First public release. Three external pre-publication reviews have been run on
-the draft. The defects they found are listed under *Fixed*; 23 regression
+First public release. Four external pre-publication reviews have been run on
+the draft. The defects they found are listed under *Fixed*; 24 regression
 tests pass (`tests/test_regression.py` lists what each one checks — the tests
-added for the second and third reviews fail against the commit each review
-examined). `examples/run_record_example.md` ties a real run on the bundled
-example AOI to its inputs, versions, commands and outputs.
+added for the second, third and fourth reviews fail against the commit each
+review examined). `examples/run_record_example.md` ties a real run on the
+bundled example AOI to its inputs, versions, commands and outputs; the fourth
+review reproduced all six output CSVs byte-for-byte from the recorded inputs.
 
 ### Added
 - `slandu fetch` — resolve and download tiles (ESA WorldCover, Hansen GFC,
@@ -21,6 +22,13 @@ example AOI to its inputs, versions, commands and outputs.
   common valid mask, per-scene reflectance scaling with a water sanity check,
   run manifest
 - `docs/data_catalog.md`, `docs/pitfalls.md`, Japanese versions, `tests/`
+
+### Fixed (fourth review, 2026-09-12)
+- `download_scene` matched a tag's files by prefix (`<tag>_*.tif`), so tag
+  `early` also matched `early_wet_B04.tif`: a new tag that is a prefix of an
+  existing one was refused, and `overwrite=True` deleted the other tag's
+  bands. Now files are split into tag and band on the last underscore and the
+  tag must match exactly (`fetch.tag_files`)
 
 ### Fixed (third review, 2026-09-12)
 - `download_scene` only checked the bands requested in the current call, so
