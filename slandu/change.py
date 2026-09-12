@@ -288,12 +288,15 @@ def bare_change(s2_dir: str, tag_a: str, tag_b: str, bbox, out_dir: str,
             zid = int(zone_ids[int(cy), int(cx)])
             clusters.append([len(clusters) + 1, f"{lat[0]:.4f}", f"{lon[0]:.4f}",
                              f"{area:.1f}", zones[zid - 1][0] if zid else ""])
-        p = os.path.join(out_dir, f"{label}_new_bare_clusters.csv")
-        with open(p, "w", newline="", encoding="utf-8-sig") as f:
-            w = csv.writer(f)
-            w.writerow(["rank", "lat", "lon", "new_bare_ha", "zone"])
-            w.writerows(clusters)
-        print(f"wrote {p} ({len(clusters)} clusters >= {min_cluster_ha} ha)")
+    # Always rewritten - header only when there is nothing - so a re-run with the
+    # same label can never leave a previous run's clusters behind.
+    p = os.path.join(out_dir, f"{label}_new_bare_clusters.csv")
+    with open(p, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["rank", "lat", "lon", "new_bare_ha", "zone"])
+        w.writerows(clusters)
+    print(f"wrote {p} ({len(clusters)} clusters >= {min_cluster_ha} ha)")
+    if clusters:
         print("  ALWAYS eyeball the top clusters in true colour before interpreting")
 
     manifest = {

@@ -11,18 +11,21 @@ evidence of cause or legality. The toolkit's job is to make those tallies
 correct and to keep you from over-reading them; the interpretation rules that
 reviewers enforce are in [docs/pitfalls.md](docs/pitfalls.md).
 
-**Status:** pre-release (v1.0.0 candidate), not yet tagged. Two rounds of
+**Status:** pre-release (v1.0.0 candidate), not yet tagged. Three rounds of
 external review so far. The first found defects in an early draft (multi-tile
 handling, period end, tile naming, Sentinel-2 co-registration and offset
 handling, AOI masking). The second confirmed those fixes and raised further
 issues — behaviour when the Sentinel-2 correction state cannot be determined,
 an analysis window that clipped the AOI, hotspot ordering, scene-tag reuse,
 memory of the coverage denominator, water zones vanishing from the CSV, and
-tests without detection power — which this revision addresses. 21 regression
-tests pass (`tests/test_regression.py` lists exactly what is checked, and the
-new ones fail against the previous commit); a further re-review is planned
-before the release is tagged. Dataset coverage is global-ish, not universal —
-see *Limitations*.
+tests without detection power. The third confirmed those and found two
+remaining gaps (tag reuse when only some bands are requested; a stale
+clusters CSV after a zero-change re-run), fixed here. 23 regression tests
+pass (`tests/test_regression.py` lists exactly what is checked; the tests
+added for each review fail against the commit that review examined). A real
+run on the bundled example AOI, with inputs, versions, commands and outputs,
+is recorded in [examples/run_record_example.md](examples/run_record_example.md).
+Dataset coverage is global-ish, not universal — see *Limitations*.
 
 ## What it does
 
@@ -89,9 +92,11 @@ a *stock*.
 `slandu change` reprojects both scenes onto one reference grid whose window is
 the AOI's densified envelope (not two bbox corners); decides the reflectance
 scaling per scene and per band from its STAC sidecar and **stops when that
-state cannot be confirmed** (no sidecar, no provider flag on a post-04.00
-baseline, contradictory metadata) unless you state `--offset-a` /
-`--offset-b` after checking the product; then checks the result against
+state cannot be confirmed** (no sidecar; no provider flag on a post-04.00
+baseline; `false` with an unknown baseline) unless you state `--offset-a` /
+`--offset-b` after checking the product — when the provider flag is present
+it is followed, and a `raster:bands` offset that disagrees with it is recorded
+in the manifest rather than applied; then checks the result against
 SCL-water cells — a median NIR over ≥ 50 such cells outside −0.01…0.15 stops
 the run with a request for verification (a quality trigger, not proof of what
 was applied); keeps SCL classes 4/5/7 only; and compares only cells valid on

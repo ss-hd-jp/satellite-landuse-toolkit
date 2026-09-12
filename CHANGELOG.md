@@ -2,11 +2,12 @@
 
 ## 1.0.0 — 2026-09 (release candidate, not yet tagged)
 
-First public release. Two external pre-publication reviews have been run on
-the draft. The defects they found are listed under *Fixed*; 21 regression
+First public release. Three external pre-publication reviews have been run on
+the draft. The defects they found are listed under *Fixed*; 23 regression
 tests pass (`tests/test_regression.py` lists what each one checks — the tests
-added for the second review fail against the previous commit `82d0643`). A
-further re-review is planned before tagging.
+added for the second and third reviews fail against the commit each review
+examined). `examples/run_record_example.md` ties a real run on the bundled
+example AOI to its inputs, versions, commands and outputs.
 
 ### Added
 - `slandu fetch` — resolve and download tiles (ESA WorldCover, Hansen GFC,
@@ -20,6 +21,22 @@ further re-review is planned before tagging.
   common valid mask, per-scene reflectance scaling with a water sanity check,
   run manifest
 - `docs/data_catalog.md`, `docs/pitfalls.md`, Japanese versions, `tests/`
+
+### Fixed (third review, 2026-09-12)
+- `download_scene` only checked the bands requested in the current call, so
+  fetching an additional band (e.g. B03) for a tag that already held another
+  scene's B04/B08/SCL passed the identity check and left old images with new
+  metadata; and `overwrite=True` with a band subset left the other bands of
+  the previous scene in place. Now every `<tag>_*.tif` is checked against the
+  tag's sidecar (files without a sidecar are refused too), and overwrite
+  removes all of them
+- `change` wrote the clusters CSV only when at least one connected component
+  existed, so a re-run with the same label that found no change kept the
+  previous run's clusters next to a summary saying 0 ha. Now the CSV is
+  rewritten on every run (header only when empty)
+- README (EN/JA): "contradictory metadata stops the run" corrected to the
+  implemented policy — the provider flag is followed and a disagreeing
+  `raster:bands` offset is recorded in the manifest, not applied
 
 ### Fixed (second review, 2026-09-09)
 - `change` assumed "offset already applied" when the correction state could

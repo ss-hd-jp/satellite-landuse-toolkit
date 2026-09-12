@@ -1,0 +1,12 @@
+﻿zone,tiles_coverage_pct,transition_code,transition_label,area_ha
+example-aoi,100.0,1,permanent,53.7
+example-aoi,100.0,2,new permanent,149.6
+example-aoi,100.0,3,lost permanent,28.5
+example-aoi,100.0,4,seasonal,9.1
+example-aoi,100.0,5,new seasonal,67.4
+example-aoi,100.0,6,lost seasonal,15.2
+example-aoi,100.0,7,seasonal to permanent,15.5
+example-aoi,100.0,8,permanent to seasonal,12.2
+example-aoi,100.0,9,ephemeral permanent,20.1
+example-aoi,100.0,10,ephemeral seasonal,120.6
+example-aoi,100.0,TOTAL,sum of classes 1-10,491.9

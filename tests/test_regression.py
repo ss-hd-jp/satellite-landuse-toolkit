@@ -224,6 +224,46 @@ def test_download_scene_refuses_silent_tag_reuse():
             fetch.download = orig
 
 
+def test_download_scene_checks_every_band_of_the_tag_not_only_the_requested_ones():
+    def fake_download(pairs, out_dir, **kw):
+        for name, _ in pairs:
+            open(os.path.join(out_dir, name), "wb").write(b"y" * 5000)
+        return []
+    with tempfile.TemporaryDirectory() as d:
+        orig = fetch.download
+        fetch.download = fake_download
+        try:
+            assets = {b: "u" for b in ("B03", "B04", "B08", "SCL")}
+            old = {"item": {"id": "old-scene"}, "assets": assets}
+            new = {"item": {"id": "new-scene"}, "assets": assets}
+            fetch.download_scene(old, d, "t")                       # B04/B08/SCL of old
+            # adding a band that does not exist yet must still notice the other scene
+            try:
+                fetch.download_scene(new, d, "t", bands=("B03",))
+            except SystemExit as e:
+                assert "old-scene" in str(e)
+            else:
+                raise AssertionError("B03-only fetch re-used a tag holding another scene")
+            assert json.load(open(os.path.join(d, "t_stac.json")))["id"] == "old-scene"
+            assert not os.path.exists(os.path.join(d, "t_B03.tif"))
+            # a partial overwrite must not leave the other scene's bands behind
+            fetch.download_scene(new, d, "t", bands=("B04",), overwrite=True)
+            left = sorted(os.path.basename(p) for p in
+                          __import__("glob").glob(os.path.join(d, "t_*")))
+            assert left == ["t_B04.tif", "t_stac.json"], left
+            assert json.load(open(os.path.join(d, "t_stac.json")))["id"] == "new-scene"
+            # files of unknown provenance (no sidecar) are refused too
+            os.remove(os.path.join(d, "t_stac.json"))
+            try:
+                fetch.download_scene(new, d, "t")
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError("tag files without a sidecar were silently re-used")
+        finally:
+            fetch.download = orig
+
+
 # ================================================================ change
 
 def render_scene(d, tag, origin, n, bare_rects, water_rect=None, dn_offset=0,
@@ -311,6 +351,22 @@ def test_change_detects_a_real_change_of_known_size():
         render_scene(d, "b", (500030, 59970), 120, extra, WATER, flag=True)
         row = _run(d)["rows"][0]
         assert abs(row["new_bare_ha"] - 1.0) < 0.05 and row["no_longer_bare_ha"] == 0.0, row
+
+
+def test_change_cluster_csv_is_rewritten_when_change_drops_to_zero():
+    with tempfile.TemporaryDirectory() as d:
+        render_scene(d, "a", (500000, 60000), 120, BARE, WATER, flag=False, baseline="02.13")
+        extra = BARE + [(500800, 500900, 59000, 59100)]
+        render_scene(d, "b", (500030, 59970), 120, extra, WATER, flag=True)
+        p = os.path.join(d, "out", "aoi_new_bare_clusters.csv")
+        assert len(_run(d)["clusters"]) == 1 and len(read_csv(p)) == 1
+        # same label, later scene now unchanged: the CSV must be emptied, not kept
+        render_scene(d, "b", (500030, 59970), 120, BARE, WATER, flag=True)
+        res = _run(d)
+        assert res["rows"][0]["new_bare_ha"] == 0.0 and res["clusters"] == []
+        assert os.path.exists(p) and read_csv(p) == []
+        with open(p, encoding="utf-8-sig") as f:
+            assert f.readline().strip() == "rank,lat,lon,new_bare_ha,zone"
 
 
 def test_change_normalises_mixed_offset_encodings():

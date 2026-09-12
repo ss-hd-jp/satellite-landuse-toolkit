@@ -6,6 +6,7 @@ environments; the whole toolkit assumes local files.
 """
 from __future__ import annotations
 
+import glob
 import json
 import os
 import subprocess
@@ -132,28 +133,29 @@ def download_scene(scene: dict, out_dir: str, tag: str,
     """Download selected bands as <tag>_<band>.tif plus a <tag>_stac.json sidecar.
 
     The sidecar keeps the full STAC item so `change` can decide how to scale
-    reflectance later. A tag is bound to one scene: if files for `tag` already
-    exist and belong to a different scene id (or to no known scene), the call
-    stops - or, with overwrite=True, removes them first. The sidecar is written
-    last and only when every band downloaded, so images and metadata cannot
-    disagree.
+    reflectance later. A tag is bound to one scene: if ANY `<tag>_*.tif` already
+    exists (whatever bands were requested this time) and the tag's sidecar
+    names a different scene id - or no sidecar exists to say which scene they
+    belong to - the call stops. With overwrite=True every file of the tag is
+    removed first, so bands of two scenes can never share a tag. The sidecar
+    is written last and only when every requested band downloaded, so images
+    and metadata cannot disagree.
     """
     os.makedirs(out_dir, exist_ok=True)
     item = scene.get("item", scene)
     new_id = item.get("id") or scene.get("id")
     side = os.path.join(out_dir, f"{tag}_stac.json")
-    band_files = [os.path.join(out_dir, f"{tag}_{b}.tif") for b in bands]
-    existing = [p for p in band_files if os.path.exists(p)]
+    existing = sorted(glob.glob(glob.escape(os.path.join(out_dir, tag)) + "_*.tif"))
     old_id = None
     if os.path.exists(side):
         try:
             old_id = json.load(open(side, encoding="utf-8")).get("id")
         except (OSError, ValueError):
             old_id = None
-    if existing and old_id != new_id:
+    if existing and (old_id is None or old_id != new_id):
         if not overwrite:
-            raise SystemExit(f"tag {tag!r} already holds files for scene {old_id!r}; "
-                             f"use another tag, or overwrite=True, to fetch {new_id!r}")
+            raise SystemExit(f"tag {tag!r} already holds {len(existing)} file(s) for scene "
+                             f"{old_id!r}; use another tag, or overwrite=True, to fetch {new_id!r}")
         for p in existing + ([side] if os.path.exists(side) else []):
             os.remove(p)
     pairs = [(f"{tag}_{b}.tif", scene["assets"][b]) for b in bands]

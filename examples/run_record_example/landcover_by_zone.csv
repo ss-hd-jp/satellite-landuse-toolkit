@@ -1,0 +1,8 @@
+﻿zone,class_code,class_label,area_ha,share_pct
+example-aoi,10,tree cover,21404.9,72.279
+example-aoi,30,grassland,1369.2,4.624
+example-aoi,40,cropland,5306.7,17.92
+example-aoi,50,built-up,954.0,3.221
+example-aoi,60,bare / sparse vegetation,156.3,0.528
+example-aoi,80,permanent water bodies,423.1,1.429
+example-aoi,TOTAL,total,29614.1,100.0
