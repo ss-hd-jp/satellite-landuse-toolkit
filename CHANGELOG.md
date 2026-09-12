@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 — 2026-09 (release candidate, not yet tagged)
+## 1.0.0 — 2026-09-13
 
 First public release. Six external pre-publication reviews have been run on
 the draft; the sixth (on `2b9db7b`) raised no further findings within its

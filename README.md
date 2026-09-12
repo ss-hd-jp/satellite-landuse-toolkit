@@ -11,8 +11,9 @@ evidence of cause or legality. The toolkit's job is to make those tallies
 correct and to keep you from over-reading them; the interpretation rules that
 reviewers enforce are in [docs/pitfalls.md](docs/pitfalls.md).
 
-**Status:** pre-release (v1.0.0 candidate), not yet tagged. Three rounds of
-external review so far. The first found defects in an early draft (multi-tile
+**Status:** v1.0.0, tagged 2026-09-13 and archived on Zenodo (DOI on the
+release page and in `CITATION.cff`). Six rounds of external review preceded
+the tag. The first found defects in an early draft (multi-tile
 handling, period end, tile naming, Sentinel-2 co-registration and offset
 handling, AOI masking). The second confirmed those fixes and raised further
 issues — behaviour when the Sentinel-2 correction state cannot be determined,
